@@ -1,6 +1,6 @@
 # llms.txt Generator — by Profound
 
-An "incredibly impressive" internal tool that turns any company website into a clean,
+An internal tool that turns any company website into a clean,
 LLM-ready [`llms.txt`](https://llmstxt.org/) file — automatically crawled, summarized,
 versioned, and kept in sync as the source site changes. Built as a take-home assignment
 for [Profound](https://www.tryprofound.com/).
