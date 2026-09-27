@@ -22,6 +22,8 @@ services:
     envVars:
       - key: ENVIRONMENT
         value: production
+      - key: PYTHON_VERSION
+        value: "3.12.7"
       - key: DATABASE_URL
         sync: false
       - key: FRONTEND_BASE_URL
@@ -53,6 +55,8 @@ services:
     buildCommand: "pip install -r requirements.txt && playwright install --with-deps chromium"
     startCommand: "rq worker crawls --url $REDIS_URL"
     envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.7"
       - key: DATABASE_URL
         sync: false
       - key: SUPABASE_URL
@@ -83,6 +87,8 @@ services:
     schedule: "0 */6 * * *"
     startCommand: "python -m app.workers.cron_recheck"
     envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.7"
       - key: DATABASE_URL
         sync: false
       - key: SUPABASE_URL
