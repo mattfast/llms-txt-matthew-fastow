@@ -6,6 +6,7 @@ import asyncio
 import re
 import urllib.robotparser as robotparser
 from dataclasses import dataclass
+from typing import Callable
 from urllib.parse import urljoin, urlparse
 from xml.etree import ElementTree
 
@@ -95,7 +96,7 @@ class Crawler:
         path = urlparse(url).path.lower()
         return path.endswith(_SKIP_EXTENSIONS)
 
-    async def crawl(self) -> list[CrawledPage]:
+    async def crawl(self, on_progress: Callable[[int, int], None] | None = None) -> list[CrawledPage]:
         headers = {"User-Agent": settings.user_agent}
         async with httpx.AsyncClient(headers=headers, follow_redirects=True) as client:
             await self._load_robots(client)
@@ -125,10 +126,17 @@ class Crawler:
                 return _extract_page(url, self.root_url, resp.text)
 
             tasks = [fetch_one(url) for url in queue[: self.max_pages]]
+            total = len(tasks)
+            completed = 0
+            if on_progress:
+                on_progress(completed, total)
             for coro in asyncio.as_completed(tasks):
                 page = await coro
+                completed += 1
                 if page:
                     results.append(page)
+                if on_progress:
+                    on_progress(completed, total)
 
             await self._render_thin_pages_with_playwright(results)
             return results

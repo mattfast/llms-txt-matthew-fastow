@@ -1,7 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
+import { motion } from "framer-motion";
+import { toast } from "sonner";
 import { apiFetch, ApiError } from "@/lib/api";
 import type {
   CrawlJob,
@@ -11,6 +13,29 @@ import type {
   Site,
 } from "@/lib/types";
 import { MerkleTreeViz } from "@/components/MerkleTreeViz";
+
+const PREVIEW_LIMIT = 8000;
+
+function ProgressBar({ site }: { site: Site }) {
+  const total = site.pages_discovered;
+  const done = site.pages_crawled;
+  const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 8;
+  return (
+    <div className="w-full">
+      <div className="h-2 rounded-full bg-surface overflow-hidden">
+        <motion.div
+          className="h-full bg-accent rounded-full"
+          initial={{ width: 0 }}
+          animate={{ width: `${pct}%` }}
+          transition={{ duration: 0.4, ease: "easeOut" }}
+        />
+      </div>
+      <p className="text-foreground-muted text-xs mt-1.5">
+        {total > 0 ? `${done} / ${total} pages crawled (${pct}%)` : "Discovering pages\u2026"}
+      </p>
+    </div>
+  );
+}
 
 export default function SiteDetailPage() {
   const params = useParams<{ siteId: string }>();
@@ -24,6 +49,8 @@ export default function SiteDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [rechecking, setRechecking] = useState(false);
   const [tab, setTab] = useState<"content" | "full">("content");
+  const [expandFull, setExpandFull] = useState(false);
+  const prevStatus = useRef<Site["status"] | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -41,9 +68,19 @@ export default function SiteDetailPage() {
           apiFetch<LlmsTxtVersion>(`/sites/${siteId}/versions/latest`).catch(() => null),
           apiFetch<MerkleTreeResponse>(`/sites/${siteId}/merkle-tree`).catch(() => null),
         ]);
-        if (latest) setActiveVersion(latest);
+        if (latest) setActiveVersion((current) => (current?.id === latest.id ? current : latest));
         if (tree) setMerkle(tree);
       }
+
+      // Toast once when a pending crawl completes (or fails) while this page is open.
+      if (prevStatus.current && prevStatus.current !== siteData.status) {
+        if (siteData.status === "ready") {
+          toast.success(`${siteData.domain} finished crawling ✅`);
+        } else if (siteData.status === "error") {
+          toast.error(`${siteData.domain} failed to crawl`);
+        }
+      }
+      prevStatus.current = siteData.status;
     } catch (err) {
       if (err instanceof ApiError) setError(err.message);
     }
@@ -52,15 +89,18 @@ export default function SiteDetailPage() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- polling an external API, setState happens in the async callback
     refresh();
-    const interval = setInterval(refresh, 4000);
+    const interval = setInterval(refresh, 3000);
     return () => clearInterval(interval);
   }, [refresh]);
 
   async function loadVersion(versionId: string) {
-    const version = await apiFetch<LlmsTxtVersion>(`/sites/${siteId}/versions/latest`);
-    // Full lookup by id isn't separately exposed; latest covers the common case. For older
-    // versions we display the summary's diff and let the user download via the API directly.
-    if (version.id === versionId) setActiveVersion(version);
+    try {
+      const version = await apiFetch<LlmsTxtVersion>(`/sites/${siteId}/versions/${versionId}`);
+      setActiveVersion(version);
+      setExpandFull(false);
+    } catch (err) {
+      if (err instanceof ApiError) toast.error(err.message);
+    }
   }
 
   async function triggerRecheck() {
@@ -68,8 +108,12 @@ export default function SiteDetailPage() {
     try {
       await apiFetch(`/sites/${siteId}/recheck`, { method: "POST" });
       await refresh();
+      toast.success("Recheck queued");
     } catch (err) {
-      if (err instanceof ApiError) setError(err.message);
+      if (err instanceof ApiError) {
+        setError(err.message);
+        toast.error(err.message || "Couldn't queue a recheck");
+      }
     } finally {
       setRechecking(false);
     }
@@ -83,11 +127,15 @@ export default function SiteDetailPage() {
     );
   }
 
+  const fullContent = activeVersion?.full_content ?? "";
+  const isLong = fullContent.length > PREVIEW_LIMIT;
+  const displayedFull = isLong && !expandFull ? fullContent.slice(0, PREVIEW_LIMIT) : fullContent;
+
   return (
-    <div className="p-8 max-w-5xl flex flex-col gap-6">
-      <div className="flex items-center justify-between">
+    <div className="p-4 sm:p-8 max-w-6xl mx-auto w-full flex flex-col gap-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{site.domain}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight break-all">{site.domain}</h1>
           <p className="text-foreground-muted text-sm mt-1">
             {site.status === "crawling"
               ? "Crawling now…"
@@ -103,7 +151,7 @@ export default function SiteDetailPage() {
         <button
           onClick={triggerRecheck}
           disabled={rechecking || site.status !== "ready"}
-          className="pill bg-surface-raised hover:bg-surface-hover border border-border-subtle transition-colors px-4 py-2 text-sm disabled:opacity-50 cursor-pointer"
+          className="pill bg-surface-raised hover:bg-surface-hover border border-border-subtle transition-colors px-4 py-2 text-sm disabled:opacity-50 cursor-pointer self-start sm:self-auto"
         >
           {rechecking ? "Queuing…" : "Recheck now"}
         </button>
@@ -112,12 +160,15 @@ export default function SiteDetailPage() {
       {error && <p className="text-danger text-sm">{error}</p>}
 
       {(site.status === "pending" || site.status === "crawling") && (
-        <div className="card p-6 flex items-center gap-3">
-          <span className="w-4 h-4 rounded-full border-2 border-accent border-t-transparent animate-spin" />
-          <p className="text-sm text-foreground-muted">
-            Discovering pages via sitemap, crawling content, and hashing each page into the
-            Merkle tree…
-          </p>
+        <div className="card p-6 flex flex-col gap-4">
+          <div className="flex items-center gap-3">
+            <span className="w-4 h-4 rounded-full border-2 border-accent border-t-transparent animate-spin shrink-0" />
+            <p className="text-sm text-foreground-muted">
+              Discovering pages via sitemap, crawling content, and hashing each page into the
+              Merkle tree…
+            </p>
+          </div>
+          <ProgressBar site={site} />
         </div>
       )}
 
@@ -128,9 +179,9 @@ export default function SiteDetailPage() {
       )}
 
       {activeVersion && (
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">
-          <div className="card p-5 flex flex-col">
-            <div className="flex items-center justify-between mb-3">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6">
+          <div className="card p-5 flex flex-col min-w-0">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
               <div className="flex gap-1 bg-surface rounded-lg p-1 border border-border-subtle">
                 <button
                   onClick={() => setTab("content")}
@@ -169,11 +220,21 @@ export default function SiteDetailPage() {
               </div>
             </div>
             <pre className="text-xs leading-relaxed whitespace-pre-wrap font-mono bg-surface rounded-lg p-4 border border-border-subtle max-h-[520px] overflow-auto">
-              {tab === "content" ? activeVersion.content : "Open the full download link above for llms-full.txt content."}
+              {tab === "content" ? activeVersion.content : displayedFull}
             </pre>
+            {tab === "full" && isLong && (
+              <button
+                onClick={() => setExpandFull((v) => !v)}
+                className="text-xs text-accent hover:underline mt-2 self-start cursor-pointer"
+              >
+                {expandFull
+                  ? "Show less"
+                  : `Show full content (${fullContent.length.toLocaleString()} characters)`}
+              </button>
+            )}
           </div>
 
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-4 min-w-0">
             {merkle && (
               <MerkleTreeViz
                 tree={merkle.tree}

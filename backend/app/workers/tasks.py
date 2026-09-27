@@ -21,8 +21,15 @@ def crawl_site_job(site_id: str, job_id: str) -> None:
         job.started_at = datetime.now(timezone.utc)
         db.commit()
 
+        def on_progress(completed: int, total: int) -> None:
+            job.pages_discovered = total
+            job.pages_crawled = completed
+            site.pages_discovered = total
+            site.pages_crawled = completed
+            db.commit()
+
         try:
-            run_crawl_job(db, site, job)
+            run_crawl_job(db, site, job, on_progress=on_progress)
         except Exception as exc:  # noqa: BLE001 - surface any failure onto the job row
             db.rollback()
             job.status = "error"

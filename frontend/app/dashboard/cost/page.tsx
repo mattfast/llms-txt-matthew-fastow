@@ -13,7 +13,8 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { apiFetch } from "@/lib/api";
+import { toast } from "sonner";
+import { apiFetch, ApiError } from "@/lib/api";
 import type { CostSummary } from "@/lib/types";
 
 const COLORS = ["#6366f1", "#34d399", "#f59e0b", "#f87171", "#38bdf8"];
@@ -22,11 +23,15 @@ export default function CostTrackerPage() {
   const [cost, setCost] = useState<CostSummary | null>(null);
 
   useEffect(() => {
-    apiFetch<CostSummary>("/analytics/cost").then(setCost);
+    apiFetch<CostSummary>("/analytics/cost")
+      .then(setCost)
+      .catch((err) => {
+        if (err instanceof ApiError) toast.error(err.message || "Couldn't load cost data");
+      });
   }, []);
 
   return (
-    <div className="p-8 max-w-3xl">
+    <div className="p-4 sm:p-8 max-w-5xl mx-auto w-full">
       <h1 className="text-2xl font-semibold tracking-tight mb-1">Cost tracker</h1>
       <p className="text-foreground-muted text-sm mb-6">
         How much your company has spent on LLM tokens traversing and summarizing websites.
@@ -42,7 +47,7 @@ export default function CostTrackerPage() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="card p-5">
+            <div className="card p-5 min-w-0">
               <h3 className="font-medium text-sm mb-3">Spend by day</h3>
               <ResponsiveContainer width="100%" height={220}>
                 <BarChart data={cost.by_day}>
@@ -57,7 +62,7 @@ export default function CostTrackerPage() {
               </ResponsiveContainer>
             </div>
 
-            <div className="card p-5">
+            <div className="card p-5 min-w-0">
               <h3 className="font-medium text-sm mb-3">Spend by purpose</h3>
               <ResponsiveContainer width="100%" height={220}>
                 <PieChart>

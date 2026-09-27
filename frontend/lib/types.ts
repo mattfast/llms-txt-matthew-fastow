@@ -7,6 +7,7 @@ export interface Site {
   root_url: string;
   domain: string;
   status: SiteStatus;
+  pages_discovered: number;
   pages_crawled: number;
   last_crawled_at: string | null;
   created_at: string;
@@ -28,6 +29,7 @@ export interface LlmsTxtVersion {
   id: string;
   version_number: number;
   content: string;
+  full_content: string;
   changed_paths: string[];
   diff_summary: string | null;
   created_at: string;

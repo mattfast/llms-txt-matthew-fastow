@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-4o-mini"
     openai_embedding_model: str = "text-embedding-3-small"
 
+    # --- Resend (transactional emails: welcome, first-crawl congrats) ---
+    resend_api_key: str = ""
+    email_from: str = "llms.txt by Profound <onboarding@resend.dev>"
+
     # --- Crawler ---
     max_pages_per_site: int = 150
     crawl_concurrency: int = 8

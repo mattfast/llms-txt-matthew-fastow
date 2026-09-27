@@ -12,6 +12,7 @@ class SiteOut(BaseModel):
     root_url: str
     domain: str
     status: str
+    pages_discovered: int
     pages_crawled: int
     last_crawled_at: datetime | None
     created_at: datetime
@@ -37,6 +38,7 @@ class LlmsTxtVersionOut(BaseModel):
     id: str
     version_number: int
     content: str
+    full_content: str
     changed_paths: list[str]
     diff_summary: str | None
     created_at: datetime

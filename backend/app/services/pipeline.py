@@ -7,15 +7,18 @@ import asyncio
 import re
 from collections import Counter
 from datetime import datetime, timezone
+from typing import Callable
 
 from sqlalchemy.orm import Session
 
 from app.models.analytics import Topic
+from app.models.company import Profile
 from app.models.jobs import CrawlJob
 from app.models.site import LlmsTxtVersion, Page, Site
 from app.services import llms_generator
 from app.services.cost_tracker import make_usage_logger
 from app.services.crawler import Crawler
+from app.services.email_client import send_first_crawl_congrats_email
 from app.services.llm_client import embed_texts
 from app.services.merkle import MerkleTree
 
@@ -25,10 +28,12 @@ _STOPWORDS = {
 }
 
 
-def run_crawl_job(db: Session, site: Site, job: CrawlJob) -> None:
+def run_crawl_job(
+    db: Session, site: Site, job: CrawlJob, on_progress: Callable[[int, int], None] | None = None
+) -> None:
     on_usage = make_usage_logger(db, company_id=site.company_id, site_id=site.id, crawl_job_id=job.id)
 
-    pages = asyncio.run(Crawler(site.root_url).crawl())
+    pages = asyncio.run(Crawler(site.root_url).crawl(on_progress=on_progress))
     job.pages_discovered = len(pages)
     if not pages:
         job.status = "error"
@@ -59,6 +64,12 @@ def run_crawl_job(db: Session, site: Site, job: CrawlJob) -> None:
 
     _upsert_pages(db, site, pages, existing_pages, changed_paths, on_usage)
     _refresh_topics(db, site, pages)
+
+    # Snapshot before mutating this site's own status, so "first ever" means the company had
+    # zero other successfully-crawled sites prior to this job completing.
+    is_companys_first_success = (
+        db.query(Site).filter(Site.company_id == site.company_id, Site.status == "ready").first() is None
+    )
 
     generated = llms_generator.generate(site.root_url, site.domain, pages, on_usage=on_usage)
     next_version = (
@@ -91,6 +102,11 @@ def run_crawl_job(db: Session, site: Site, job: CrawlJob) -> None:
     job.finished_at = datetime.now(timezone.utc)
 
     db.commit()
+
+    if is_companys_first_success:
+        creator = db.get(Profile, site.created_by)
+        if creator:
+            send_first_crawl_congrats_email(creator.email, site.domain)
 
 
 def _upsert_pages(db, site, pages, existing_pages, changed_paths, on_usage) -> None:

@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.core.db import get_db
 from app.core.security import CurrentUser, get_current_user
 from app.models.company import Company, Profile
+from app.services.email_client import send_welcome_email
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -71,6 +72,7 @@ def onboard(
             company = db.query(Company).filter(Company.slug == slug).one()
 
     profile = db.query(Profile).filter(Profile.id == user.id).one_or_none()
+    is_new_profile = profile is None
     if not profile:
         profile = Profile(id=user.id, company_id=company.id, email=user.email)
         db.add(profile)
@@ -79,7 +81,13 @@ def onboard(
         except IntegrityError:
             db.rollback()
             profile = db.query(Profile).filter(Profile.id == user.id).one()
+            is_new_profile = False
     db.refresh(profile)
+
+    if is_new_profile:
+        # Only the request that actually won the race sends the welcome email - a
+        # concurrent retry that recovered someone else's row should not send a duplicate.
+        send_welcome_email(profile.email, company.name)
     return ProfileOut(
         id=profile.id, email=profile.email, company_id=company.id, company_name=company.name
     )

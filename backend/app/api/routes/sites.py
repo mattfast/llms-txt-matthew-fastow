@@ -130,6 +130,21 @@ def latest_version(site_id: str, db: Session = Depends(get_db), user: CurrentUse
     return version
 
 
+@router.get("/{site_id}/versions/{version_id}", response_model=LlmsTxtVersionOut)
+def get_version(
+    site_id: str, version_id: str, db: Session = Depends(get_db), user: CurrentUser = Depends(get_current_user)
+):
+    _get_owned_site(db, site_id, user)
+    version = (
+        db.query(LlmsTxtVersion)
+        .filter(LlmsTxtVersion.site_id == site_id, LlmsTxtVersion.id == version_id)
+        .one_or_none()
+    )
+    if not version:
+        raise HTTPException(status_code=404, detail="Version not found")
+    return version
+
+
 @router.get("/{site_id}/llms.txt")
 def download_llms_txt(site_id: str, db: Session = Depends(get_db), user: CurrentUser = Depends(get_current_user)):
     _get_owned_site(db, site_id, user)
