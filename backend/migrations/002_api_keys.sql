@@ -12,3 +12,5 @@ CREATE TABLE IF NOT EXISTS api_keys (
 
 CREATE INDEX IF NOT EXISTS ix_api_keys_company_id ON api_keys(company_id);
 CREATE INDEX IF NOT EXISTS ix_api_keys_created_by ON api_keys(created_by);
+
+ALTER TABLE api_keys ENABLE ROW LEVEL SECURITY;
