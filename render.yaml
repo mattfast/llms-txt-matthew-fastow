@@ -48,15 +48,12 @@ services:
 
   - type: worker
     name: llms-txt-worker
-    runtime: python
+    runtime: docker
     region: oregon
     plan: starter
-    rootDir: backend
-    buildCommand: "pip install -r requirements.txt && playwright install --with-deps chromium"
-    startCommand: "rq worker crawls --url $REDIS_URL"
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
     envVars:
-      - key: PYTHON_VERSION
-        value: "3.12.7"
       - key: DATABASE_URL
         sync: false
       - key: SUPABASE_URL

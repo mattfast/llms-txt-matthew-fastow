@@ -83,7 +83,8 @@ for [Profound](https://www.tryprofound.com/).
   Supabase project's own Postgres instance so Auth and app data live together, though any
   Postgres 14+ works.
 - **Queue**: Redis + [RQ](https://python-rq.org/) for background crawl/recheck jobs, plus
-  a Render Cron Job that enqueues rechecks for all sites on a schedule.
+  a Render Cron Job that enqueues rechecks for all sites on a schedule. The crawl worker
+  uses Docker so Playwright can install Chromium's system dependencies during image build.
 - **LLM**: OpenAI `gpt-4o-mini` for summarization/quotes and `text-embedding-3-small` for
   semantic search.
 
@@ -184,10 +185,12 @@ Visit `http://localhost:3000`.
   Render backend URL).
 - **Backend → Render**: push this repo, then create a new Blueprint from `render.yaml` at
   the repo root. It provisions the API web service, an RQ worker, a recheck cron job, and
-  a managed Redis instance. Set the `sync: false` env vars (`DATABASE_URL`, Supabase
-  keys, `OPENAI_API_KEY`) in the Render dashboard after the blueprint is created — point
-  `DATABASE_URL` at your Supabase project's Postgres connection string (with the
-  `pgvector` extension enabled via the Supabase dashboard's Database → Extensions page).
+  a managed Redis instance. The worker is built from `backend/Dockerfile` to provide
+  Playwright's Chromium runtime dependencies. Set the `sync: false` env vars
+  (`DATABASE_URL`, Supabase keys, `OPENAI_API_KEY`) in the Render dashboard after the
+  blueprint is created — point `DATABASE_URL` at your Supabase project's Postgres
+  connection string (with the `pgvector` extension enabled via the Supabase dashboard's
+  Database → Extensions page).
 
 ## Environment variables
 
