@@ -4,7 +4,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowUpDown, Search as SearchIcon } from "lucide-react";
+import { ArrowUpDown, Search as SearchIcon, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { apiFetch, ApiError } from "@/lib/api";
 import { normalizeUrl } from "@/lib/url";
@@ -49,6 +49,9 @@ function SitesContent() {
   const [query, setQuery] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("created_at");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [deleteTarget, setDeleteTarget] = useState<Site | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const loadSites = useCallback(async () => {
     try {
@@ -87,6 +90,25 @@ function SitesContent() {
     },
     [loadSites]
   );
+
+  async function deleteSite() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await apiFetch<void>(`/sites/${deleteTarget.id}`, { method: "DELETE" });
+      setSites((current) => current?.filter((site) => site.id !== deleteTarget.id) ?? []);
+      toast.success(`${deleteTarget.domain} and its generated content were deleted`);
+      setDeleteTarget(null);
+    } catch (err) {
+      const message =
+        err instanceof ApiError ? err.message : "Couldn't delete this generation. Please try again.";
+      setDeleteError(message);
+      toast.error(message);
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   useEffect(() => {
     if (pendingUrl) {
@@ -238,30 +260,91 @@ function SitesContent() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0 }}
               >
-                <Link
-                  href={`/dashboard/sites/${site.id}`}
-                  className="card flex flex-col justify-between px-5 py-4 hover:border-accent/40 hover:bg-surface-hover transition-colors h-full"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="min-w-0">
-                      <p className="font-medium truncate">{site.domain}</p>
-                      <p className="text-foreground-muted text-xs mt-0.5">
-                        {site.pages_crawled} pages crawled
-                        {site.last_crawled_at &&
-                          ` · last checked ${new Date(site.last_crawled_at).toLocaleString()}`}
-                      </p>
+                <div className="card relative flex flex-col justify-between hover:border-accent/40 hover:bg-surface-hover transition-colors h-full">
+                  <Link
+                    href={`/dashboard/sites/${site.id}`}
+                    className="flex flex-col justify-between px-5 py-4 pr-36 min-h-24"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-medium truncate">{site.domain}</p>
+                        <p className="text-foreground-muted text-xs mt-0.5">
+                          {site.pages_crawled} pages crawled
+                          {site.last_crawled_at &&
+                            ` · last checked ${new Date(site.last_crawled_at).toLocaleString()}`}
+                        </p>
+                      </div>
                     </div>
+                    {(site.status === "crawling" || site.status === "pending") && (
+                      <CrawlProgress site={site} compact />
+                    )}
+                  </Link>
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
                     <StatusBadge status={site.status} />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDeleteError(null);
+                        setDeleteTarget(site);
+                      }}
+                      aria-label={`Delete ${site.domain} generation`}
+                      title="Delete generation"
+                      className="inline-flex items-center justify-center rounded-md p-2 text-foreground-muted hover:bg-red-500/10 hover:text-red-400 transition-colors cursor-pointer"
+                    >
+                      <Trash2 size={16} />
+                    </button>
                   </div>
-                  {(site.status === "crawling" || site.status === "pending") && (
-                    <CrawlProgress site={site} compact />
-                  )}
-                </Link>
+                </div>
               </motion.div>
             ))}
           </div>
         )}
       </AnimatePresence>
+
+      {deleteTarget && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !deleting) setDeleteTarget(null);
+          }}
+        >
+          <section
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="delete-generation-title"
+            aria-describedby="delete-generation-description"
+            className="card w-full max-w-md p-6 shadow-2xl"
+          >
+            <h2 id="delete-generation-title" className="text-lg font-semibold">
+              Delete {deleteTarget.domain}?
+            </h2>
+            <p id="delete-generation-description" className="text-sm text-foreground-muted mt-2">
+              This permanently removes its generated llms.txt files, version history, crawled
+              pages, and topic insights. Usage and cost history will be retained. A crawl
+              currently in progress must finish before this generation can be deleted.
+            </p>
+            {deleteError && <p className="text-danger text-sm mt-3">{deleteError}</p>}
+            <div className="flex justify-end gap-2 mt-6">
+              <button
+                type="button"
+                onClick={() => setDeleteTarget(null)}
+                disabled={deleting}
+                className="pill border border-border-subtle px-4 py-2 text-sm hover:bg-surface-hover disabled:opacity-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={deleteSite}
+                disabled={deleting}
+                className="pill bg-red-500 hover:bg-red-600 text-white px-4 py-2 text-sm disabled:opacity-50 cursor-pointer"
+              >
+                {deleting ? "Deleting…" : "Delete generation"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }

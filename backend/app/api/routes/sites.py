@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.db import get_db
 from app.core.security import CurrentUser, get_current_user
+from app.models.analytics import LlmUsage, Topic
 from app.models.jobs import CrawlJob
 from app.models.site import LlmsTxtVersion, Page, Site
 from app.schemas.sites import (
@@ -87,6 +88,39 @@ def list_sites(db: Session = Depends(get_db), user: CurrentUser = Depends(get_cu
 def get_site(site_id: str, db: Session = Depends(get_db), user: CurrentUser = Depends(get_current_user)):
     site = _get_owned_site(db, site_id, user)
     return site
+
+
+@router.delete("/{site_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_site(
+    site_id: str,
+    db: Session = Depends(get_db),
+    user: CurrentUser = Depends(get_current_user),
+):
+    site = _get_owned_site(db, site_id, user)
+    if site.status == "crawling":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This site is currently crawling. Try deleting it again after the crawl finishes.",
+        )
+
+    crawl_job_ids = [
+        job_id
+        for (job_id,) in db.query(CrawlJob.id).filter(CrawlJob.site_id == site_id).all()
+    ]
+    if crawl_job_ids:
+        db.query(LlmUsage).filter(LlmUsage.crawl_job_id.in_(crawl_job_ids)).update(
+            {LlmUsage.crawl_job_id: None},
+            synchronize_session=False,
+        )
+    db.query(LlmUsage).filter(LlmUsage.site_id == site_id).update(
+        {LlmUsage.site_id: None},
+        synchronize_session=False,
+    )
+    db.query(Topic).filter(Topic.site_id == site_id).delete(synchronize_session=False)
+    db.query(CrawlJob).filter(CrawlJob.site_id == site_id).delete(synchronize_session=False)
+    db.delete(site)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/{site_id}/jobs", response_model=list[CrawlJobOut])
