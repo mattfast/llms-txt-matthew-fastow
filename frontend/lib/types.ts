@@ -2,6 +2,13 @@
 
 export type SiteStatus = "pending" | "crawling" | "ready" | "error";
 
+export interface CrawlActivity {
+  started_at: string;
+  current_url: string | null;
+  recently_crawled: string[];
+  recently_discovered: string[];
+}
+
 export interface Site {
   id: string;
   root_url: string;
@@ -9,6 +16,7 @@ export interface Site {
   status: SiteStatus;
   pages_discovered: number;
   pages_crawled: number;
+  crawl_activity: CrawlActivity | null;
   last_crawled_at: string | null;
   created_at: string;
 }

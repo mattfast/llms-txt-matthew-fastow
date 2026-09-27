@@ -29,17 +29,23 @@ _STOPWORDS = {
 
 
 def run_crawl_job(
-    db: Session, site: Site, job: CrawlJob, on_progress: Callable[[int, int], None] | None = None
+    db: Session,
+    site: Site,
+    job: CrawlJob,
+    on_progress: Callable[[int, int, dict[str, object]], None] | None = None,
 ) -> None:
     on_usage = make_usage_logger(db, company_id=site.company_id, site_id=site.id, crawl_job_id=job.id)
 
-    pages = asyncio.run(Crawler(site.root_url).crawl(on_progress=on_progress))
+    pages = asyncio.run(
+        Crawler(site.root_url).crawl(on_progress=on_progress, started_at=job.started_at)
+    )
     job.pages_discovered = len(pages)
     if not pages:
         job.status = "error"
         job.error_message = "Crawl returned zero pages (site may block bots or be unreachable)."
         job.finished_at = datetime.now(timezone.utc)
         site.status = "error"
+        site.crawl_activity = None
         db.commit()
         return
 
@@ -56,6 +62,7 @@ def run_crawl_job(
         job.pages_changed = 0
         job.finished_at = datetime.now(timezone.utc)
         site.status = "ready"
+        site.crawl_activity = None
         site.last_crawled_at = datetime.now(timezone.utc)
         db.commit()
         return
@@ -94,6 +101,7 @@ def run_crawl_job(
     site.pages_discovered = len(pages)
     site.pages_crawled = len(pages)
     site.status = "ready"
+    site.crawl_activity = None
     site.last_crawled_at = datetime.now(timezone.utc)
 
     job.status = "done"

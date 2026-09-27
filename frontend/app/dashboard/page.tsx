@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { apiFetch, ApiError } from "@/lib/api";
 import { normalizeUrl } from "@/lib/url";
 import type { Site } from "@/lib/types";
+import { CrawlProgress } from "@/components/CrawlProgress";
 
 const STATUS_STYLES: Record<Site["status"], string> = {
   pending: "bg-yellow-500/15 text-yellow-400",
@@ -19,33 +20,12 @@ const STATUS_STYLES: Record<Site["status"], string> = {
 
 function StatusBadge({ status }: { status: Site["status"] }) {
   return (
-    <span className={`pill text-xs font-medium px-2.5 py-1 ${STATUS_STYLES[status]}`}>
+    <span className={`pill inline-flex items-center gap-1.5 whitespace-nowrap text-xs font-medium px-2.5 py-1 ${STATUS_STYLES[status]}`}>
       {status === "crawling" && (
-        <span className="inline-block w-1.5 h-1.5 rounded-full bg-accent mr-1.5 animate-pulse" />
+        <span className="inline-block w-1.5 h-1.5 shrink-0 rounded-full bg-accent animate-pulse" />
       )}
       {status}
     </span>
-  );
-}
-
-function ProgressBar({ site }: { site: Site }) {
-  const total = site.pages_discovered;
-  const done = site.pages_crawled;
-  const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 8;
-  return (
-    <div className="w-full mt-2">
-      <div className="h-1.5 rounded-full bg-surface overflow-hidden">
-        <motion.div
-          className="h-full bg-accent rounded-full"
-          initial={{ width: 0 }}
-          animate={{ width: `${pct}%` }}
-          transition={{ duration: 0.4, ease: "easeOut" }}
-        />
-      </div>
-      <p className="text-foreground-muted text-[11px] mt-1">
-        {total > 0 ? `${done} / ${total} pages crawled` : "Discovering pages\u2026"}
-      </p>
-    </div>
   );
 }
 
@@ -274,7 +254,7 @@ function SitesContent() {
                     <StatusBadge status={site.status} />
                   </div>
                   {(site.status === "crawling" || site.status === "pending") && (
-                    <ProgressBar site={site} />
+                    <CrawlProgress site={site} compact />
                   )}
                 </Link>
               </motion.div>

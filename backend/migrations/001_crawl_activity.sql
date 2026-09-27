@@ -1,0 +1,2 @@
+ALTER TABLE sites
+ADD COLUMN IF NOT EXISTS crawl_activity JSON;

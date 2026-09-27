@@ -3,10 +3,13 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from app.core.config import get_settings
 from app.core.db import SessionLocal
 from app.models.jobs import CrawlJob
 from app.models.site import Site
 from app.services.pipeline import run_crawl_job
+
+settings = get_settings()
 
 
 def crawl_site_job(site_id: str, job_id: str) -> None:
@@ -19,13 +22,20 @@ def crawl_site_job(site_id: str, job_id: str) -> None:
         site.status = "crawling"
         job.status = "running"
         job.started_at = datetime.now(timezone.utc)
+        site.crawl_activity = {
+            "started_at": job.started_at.isoformat(),
+            "current_url": site.root_url,
+            "recently_crawled": [],
+            "recently_discovered": [],
+        }
         db.commit()
 
-        def on_progress(completed: int, total: int) -> None:
+        def on_progress(completed: int, total: int, activity: dict[str, object]) -> None:
             job.pages_discovered = total
             job.pages_crawled = completed
             site.pages_discovered = total
             site.pages_crawled = completed
+            site.crawl_activity = activity
             db.commit()
 
         try:
@@ -54,6 +64,11 @@ def enqueue_rechecks() -> None:
             job = CrawlJob(site_id=site.id, job_type="recheck")
             db.add(job)
             db.commit()
-            queue.enqueue(crawl_site_job, site.id, job.id, job_timeout=900)
+            queue.enqueue(
+                crawl_site_job,
+                site.id,
+                job.id,
+                job_timeout=settings.crawl_job_timeout_seconds,
+            )
     finally:
         db.close()

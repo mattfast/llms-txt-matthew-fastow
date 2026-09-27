@@ -4,6 +4,7 @@ import tldextract
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.core.db import get_db
 from app.core.security import CurrentUser, get_current_user
 from app.models.jobs import CrawlJob
@@ -20,6 +21,7 @@ from app.workers.queue import get_queue
 from app.workers.tasks import crawl_site_job
 
 router = APIRouter(prefix="/sites", tags=["sites"])
+settings = get_settings()
 
 
 def _domain_of(url: str) -> str:
@@ -59,7 +61,12 @@ def create_site(
     job = CrawlJob(site_id=site.id, job_type="initial")
     db.add(job)
     db.commit()
-    get_queue().enqueue(crawl_site_job, site.id, job.id, job_timeout=900)
+    get_queue().enqueue(
+        crawl_site_job,
+        site.id,
+        job.id,
+        job_timeout=settings.crawl_job_timeout_seconds,
+    )
 
     return site
 
@@ -101,7 +108,12 @@ def trigger_recheck(site_id: str, db: Session = Depends(get_db), user: CurrentUs
     db.add(job)
     db.commit()
     db.refresh(job)
-    get_queue().enqueue(crawl_site_job, site.id, job.id, job_timeout=900)
+    get_queue().enqueue(
+        crawl_site_job,
+        site.id,
+        job.id,
+        job_timeout=settings.crawl_job_timeout_seconds,
+    )
     return job
 
 

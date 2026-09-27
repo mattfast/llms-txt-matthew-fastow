@@ -42,6 +42,7 @@ class Site(Base):
     merkle_root_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     pages_discovered: Mapped[int] = mapped_column(Integer, default=0)
     pages_crawled: Mapped[int] = mapped_column(Integer, default=0)
+    crawl_activity: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     last_crawled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

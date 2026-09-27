@@ -3,6 +3,13 @@ from datetime import datetime
 from pydantic import BaseModel, HttpUrl
 
 
+class CrawlActivityOut(BaseModel):
+    started_at: datetime
+    current_url: str | None
+    recently_crawled: list[str]
+    recently_discovered: list[str]
+
+
 class SiteCreateRequest(BaseModel):
     url: HttpUrl
 
@@ -14,6 +21,7 @@ class SiteOut(BaseModel):
     status: str
     pages_discovered: int
     pages_crawled: int
+    crawl_activity: CrawlActivityOut | None = None
     last_crawled_at: datetime | None
     created_at: datetime
 

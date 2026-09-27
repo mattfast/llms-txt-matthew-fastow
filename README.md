@@ -13,10 +13,12 @@ for [Profound](https://www.tryprofound.com/).
    verify their email before the account is usable; the URL you pasted is remembered and
    the corresponding site is created automatically the moment you land back in the
    dashboard.
-3. **Watch it crawl.** A background worker crawls the site (respecting `robots.txt`,
-   capped in depth/page count), extracts and summarizes the content with an LLM, and
-   assembles a well-organized `llms.txt` — mirroring the file's real-world spec, with
-   sections like `Docs`, `Pricing`, `Blog`, etc. inferred from the site structure.
+3. **Watch it crawl.** A background worker follows same-site links breadth-first, reads
+   nested sitemap indexes and `robots.txt`, and uses a headless browser when JavaScript is
+   needed to reveal links. Crawls are capped at 500 pages by default (configurable with
+   `MAX_PAGES_PER_SITE`) and cannot include login-protected or undiscoverable URLs. It then
+   summarizes the content and assembles a well-organized `llms.txt` with sections like
+   `Docs`, `Pricing`, and `Blog` inferred from the site structure.
 2. **Track changes over time.** Every crawl builds a **Merkle tree** over the site's
    pages (see [Why a Merkle tree?](#why-a-merkle-tree) below). Since a Merkle root is
    just a hash of hashes, comparing the new root to the last stored root tells us in O(1)
@@ -149,9 +151,13 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 playwright install chromium   # for JS-rendered page crawling
 cp .env.example .env          # then fill in SUPABASE_* and (optionally) OPENAI_API_KEY
-python -c "from app.core.db import Base, engine; Base.metadata.create_all(bind=engine)"
+python -c "import app.models; from app.core.db import Base, engine; Base.metadata.create_all(bind=engine)"
 uvicorn app.main:app --reload --port 8000
 ```
+
+For an existing database, apply any additive SQL migrations in `backend/migrations/`
+before starting a backend version that depends on those columns. For example, crawl
+activity progress adds `sites.crawl_activity` via `001_crawl_activity.sql`.
 
 In a second terminal, run the background worker that processes crawl jobs:
 

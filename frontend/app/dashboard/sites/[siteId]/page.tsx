@@ -13,28 +13,43 @@ import type {
   Site,
 } from "@/lib/types";
 import { MerkleTreeViz } from "@/components/MerkleTreeViz";
+import { CrawlProgress } from "@/components/CrawlProgress";
 
 const PREVIEW_LIMIT = 8000;
 
-function ProgressBar({ site }: { site: Site }) {
-  const total = site.pages_discovered;
-  const done = site.pages_crawled;
-  const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 8;
-  return (
-    <div className="w-full">
-      <div className="h-2 rounded-full bg-surface overflow-hidden">
-        <motion.div
-          className="h-full bg-accent rounded-full"
-          initial={{ width: 0 }}
-          animate={{ width: `${pct}%` }}
-          transition={{ duration: 0.4, ease: "easeOut" }}
-        />
-      </div>
-      <p className="text-foreground-muted text-xs mt-1.5">
-        {total > 0 ? `${done} / ${total} pages crawled (${pct}%)` : "Discovering pages\u2026"}
-      </p>
-    </div>
-  );
+function normalizePath(path: string): string {
+  const [pathname, query = ""] = path.split("?", 2);
+  const normalized = pathname.length > 1 ? pathname.replace(/\/+$/, "") : pathname || "/";
+  return query ? `${normalized}?${query}` : normalized;
+}
+
+function extractLlmsSection(content: string, selectedPath: string): string | null {
+  const lines = content.split("\n");
+  const target = normalizePath(selectedPath);
+  let sectionStart = -1;
+
+  for (let index = 0; index <= lines.length; index += 1) {
+    const isHeading = index < lines.length && /^##\s/.test(lines[index]);
+    if (isHeading || index === lines.length) {
+      if (sectionStart >= 0) {
+        const section = lines.slice(sectionStart, index);
+        const containsPage = section.some((line) => {
+          const match = line.match(/\]\((https?:\/\/[^)\s]+)\)/);
+          if (!match) return false;
+          try {
+            const url = new URL(match[1]);
+            return normalizePath(`${url.pathname}${url.search}`) === target;
+          } catch {
+            return false;
+          }
+        });
+        if (containsPage) return section.join("\n").trim();
+      }
+      sectionStart = isHeading ? index : -1;
+    }
+  }
+
+  return null;
 }
 
 export default function SiteDetailPage() {
@@ -50,7 +65,11 @@ export default function SiteDetailPage() {
   const [rechecking, setRechecking] = useState(false);
   const [tab, setTab] = useState<"content" | "full">("content");
   const [expandFull, setExpandFull] = useState(false);
+  const [expandChangedPaths, setExpandChangedPaths] = useState(false);
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const prevStatus = useRef<Site["status"] | null>(null);
+  const followingLatestVersion = useRef(true);
+  const activeVersionId = useRef<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -68,7 +87,13 @@ export default function SiteDetailPage() {
           apiFetch<LlmsTxtVersion>(`/sites/${siteId}/versions/latest`).catch(() => null),
           apiFetch<MerkleTreeResponse>(`/sites/${siteId}/merkle-tree`).catch(() => null),
         ]);
-        if (latest) setActiveVersion((current) => (current?.id === latest.id ? current : latest));
+        if (latest && followingLatestVersion.current) {
+          if (activeVersionId.current !== latest.id) {
+            activeVersionId.current = latest.id;
+            setSelectedPath(null);
+            setActiveVersion(latest);
+          }
+        }
         if (tree) setMerkle(tree);
       }
 
@@ -96,8 +121,12 @@ export default function SiteDetailPage() {
   async function loadVersion(versionId: string) {
     try {
       const version = await apiFetch<LlmsTxtVersion>(`/sites/${siteId}/versions/${versionId}`);
+      followingLatestVersion.current = versions[0]?.id === version.id;
+      activeVersionId.current = version.id;
       setActiveVersion(version);
       setExpandFull(false);
+      setExpandChangedPaths(false);
+      setSelectedPath(null);
     } catch (err) {
       if (err instanceof ApiError) toast.error(err.message);
     }
@@ -130,6 +159,19 @@ export default function SiteDetailPage() {
   const fullContent = activeVersion?.full_content ?? "";
   const isLong = fullContent.length > PREVIEW_LIMIT;
   const displayedFull = isLong && !expandFull ? fullContent.slice(0, PREVIEW_LIMIT) : fullContent;
+  const selectedSection =
+    tab === "content" && selectedPath && activeVersion
+      ? extractLlmsSection(activeVersion.content, selectedPath)
+      : null;
+  const displayedContent = selectedPath
+    ? selectedSection ??
+      `No llms.txt section contains ${selectedPath} in version v${activeVersion?.version_number ?? ""}.`
+    : activeVersion?.content ?? "";
+
+  function selectPage(path: string) {
+    setSelectedPath(path);
+    setTab("content");
+  }
 
   return (
     <div className="p-4 sm:p-8 max-w-6xl mx-auto w-full flex flex-col gap-6">
@@ -159,6 +201,51 @@ export default function SiteDetailPage() {
 
       {error && <p className="text-danger text-sm">{error}</p>}
 
+      {activeVersion && activeVersion.version_number >= 2 && (
+        <section className="card p-5 border-accent/20">
+          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+            <div>
+              <h2 className="font-medium">Changes in version v{activeVersion.version_number}</h2>
+              <p className="text-sm text-foreground-muted mt-1">
+                {activeVersion.diff_summary || "No change summary is available for this version."}
+              </p>
+            </div>
+            <span className="pill bg-accent/15 text-accent text-xs px-2.5 py-1 self-start">
+              {activeVersion.changed_paths.length} changed page
+              {activeVersion.changed_paths.length === 1 ? "" : "s"}
+            </span>
+          </div>
+          {activeVersion.changed_paths.length > 0 && (
+            <>
+              <ul
+                className={`mt-4 flex flex-col gap-1.5 overflow-y-auto ${
+                  expandChangedPaths ? "max-h-96" : "max-h-40"
+                }`}
+              >
+                {activeVersion.changed_paths.map((path) => (
+                <li key={path}>
+                  <button
+                    type="button"
+                    onClick={() => selectPage(path)}
+                    className="text-sm font-mono text-accent hover:underline text-left break-all cursor-pointer"
+                  >
+                    {path}
+                  </button>
+                </li>
+                ))}
+              </ul>
+              <button
+                type="button"
+                onClick={() => setExpandChangedPaths((expanded) => !expanded)}
+                className="mt-2 text-xs text-accent hover:underline self-start cursor-pointer"
+              >
+                {expandChangedPaths ? "Show less" : "Show more changed pages"}
+              </button>
+            </>
+          )}
+        </section>
+      )}
+
       {(site.status === "pending" || site.status === "crawling") && (
         <div className="card p-6 flex flex-col gap-4">
           <div className="flex items-center gap-3">
@@ -168,7 +255,7 @@ export default function SiteDetailPage() {
               Merkle tree…
             </p>
           </div>
-          <ProgressBar site={site} />
+          <CrawlProgress site={site} />
         </div>
       )}
 
@@ -219,8 +306,22 @@ export default function SiteDetailPage() {
                 </a>
               </div>
             </div>
+            {selectedPath && tab === "content" && (
+              <div className="flex items-center justify-between gap-3 text-xs text-foreground-muted mb-2">
+                <span className="truncate">
+                  Showing section for <span className="font-mono text-foreground">{selectedPath}</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedPath(null)}
+                  className="text-accent hover:underline shrink-0 cursor-pointer"
+                >
+                  Show full llms.txt
+                </button>
+              </div>
+            )}
             <pre className="text-xs leading-relaxed whitespace-pre-wrap font-mono bg-surface rounded-lg p-4 border border-border-subtle max-h-[520px] overflow-auto">
-              {tab === "content" ? activeVersion.content : displayedFull}
+              {tab === "content" ? displayedContent : displayedFull}
             </pre>
             {tab === "full" && isLong && (
               <button
@@ -240,6 +341,8 @@ export default function SiteDetailPage() {
                 tree={merkle.tree}
                 rootHash={merkle.root_hash}
                 changedCount={merkle.changed_paths.length}
+                selectedPath={selectedPath}
+                onSelectPage={selectPage}
               />
             )}
 
