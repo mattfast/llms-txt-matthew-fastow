@@ -12,6 +12,7 @@ import {
   BarChart3,
   Search,
   Coins,
+  KeyRound,
   Menu,
   X,
   LogOut,
@@ -24,6 +25,7 @@ const NAV_ITEMS = [
   { href: "/dashboard/analytics", label: "Topic insights", icon: BarChart3 },
   { href: "/dashboard/search", label: "Ask your sites", icon: Search },
   { href: "/dashboard/cost", label: "Cost tracker", icon: Coins },
+  { href: "/dashboard/api", label: "API access", icon: KeyRound },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -46,21 +48,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     setMobileNavOpen(false);
   }, [pathname]);
 
-  // Self-heal: if the /verify page's onboarding call didn't complete (e.g. the user
-  // confirmed their email in a different browser/tab), retry it here from the dashboard
-  // using the company name stashed in Supabase user metadata at signup time.
+  // Self-heal if onboarding did not complete after email verification.
   useEffect(() => {
     if (!session || !me || me.onboarded || onboardingInFlight.current) return;
 
     let cancelled = false;
     onboardingInFlight.current = true;
     async function retryOnboarding() {
-      const pendingCompanyName =
-        (session?.user.user_metadata?.pending_company_name as string) || "My Company";
       try {
         await apiFetch("/auth/onboard", {
           method: "POST",
-          body: JSON.stringify({ company_name: pendingCompanyName }),
         });
         if (!cancelled) await refreshMe();
       } catch {
@@ -147,7 +144,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   );
 
   return (
-    <div className="flex-1 flex min-h-0">
+    <div className="flex-1 flex min-h-0 lg:h-dvh lg:overflow-hidden">
       {/* Mobile top bar */}
       <div className="lg:hidden fixed top-0 inset-x-0 z-30 flex items-center justify-between px-4 py-3 border-b border-border-subtle bg-background/95 backdrop-blur">
         <Link href="/">
@@ -171,7 +168,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       )}
 
       {/* Desktop sidebar */}
-      <aside className="hidden lg:flex w-60 shrink-0 border-r border-border-subtle flex-col p-4 gap-6">
+      <aside className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:z-20 lg:flex w-60 border-r border-border-subtle flex-col p-4 gap-6 overflow-y-auto">
         <Link href="/">
           <Logo className="px-2" />
         </Link>
@@ -179,7 +176,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         {accountFooter}
       </aside>
 
-      <main className="flex-1 min-w-0 pt-[57px] lg:pt-0">{children}</main>
+      <main className="flex-1 min-w-0 pt-[57px] lg:ml-60 lg:pt-0 lg:h-dvh lg:overflow-y-auto">
+        {children}
+      </main>
     </div>
   );
 }

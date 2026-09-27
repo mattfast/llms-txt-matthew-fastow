@@ -80,7 +80,7 @@ for [Profound](https://www.tryprofound.com/).
   deployed on Vercel. Talks to Supabase directly for auth, and to the FastAPI backend for
   everything else.
 - **Backend**: FastAPI (Python), deployed on Render as a web service. Verifies Supabase
-  JWTs on every request, owns all business logic and the Postgres schema.
+  JWTs and hashed company API keys, owns all business logic and the Postgres schema.
 - **Database**: Postgres with the `pgvector` extension — recommended to run this as your
   Supabase project's own Postgres instance so Auth and app data live together, though any
   Postgres 14+ works.
@@ -157,7 +157,8 @@ uvicorn app.main:app --reload --port 8000
 
 For an existing database, apply any additive SQL migrations in `backend/migrations/`
 before starting a backend version that depends on those columns. For example, crawl
-activity progress adds `sites.crawl_activity` via `001_crawl_activity.sql`.
+activity progress adds `sites.crawl_activity` via `001_crawl_activity.sql`; API key
+authentication adds the `api_keys` table via `002_api_keys.sql`.
 
 In a second terminal, run the background worker that processes crawl jobs:
 

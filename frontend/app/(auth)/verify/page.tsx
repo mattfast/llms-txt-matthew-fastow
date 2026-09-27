@@ -42,11 +42,8 @@ function VerifyContent() {
       try {
         const me = await apiFetch<MeResponse>("/auth/me");
         if (!me.onboarded) {
-          const pendingCompanyName =
-            (session.user.user_metadata?.pending_company_name as string) || "My Company";
           await apiFetch("/auth/onboard", {
             method: "POST",
-            body: JSON.stringify({ company_name: pendingCompanyName }),
           });
         }
       } catch {

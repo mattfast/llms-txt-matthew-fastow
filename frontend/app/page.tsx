@@ -6,18 +6,18 @@ import Link from "next/link";
 export default function HomePage() {
   return (
     <div className="flex-1 flex flex-col">
-      <header className="flex items-center justify-between px-6 py-5 max-w-6xl mx-auto w-full">
+      <header className="relative z-10 flex items-center justify-between px-6 py-5 max-w-6xl mx-auto w-full">
         <Logo />
         <nav className="flex items-center gap-3 text-sm">
           <Link
             href="/login"
-            className="text-foreground-muted hover:text-foreground transition-colors px-3 py-1.5"
+            className="text-foreground-muted hover:text-foreground transition-colors px-3 py-1.5 cursor-pointer"
           >
             Log in
           </Link>
           <Link
             href="/signup"
-            className="pill bg-surface-raised hover:bg-surface-hover border border-border-subtle transition-colors px-4 py-1.5"
+            className="pill bg-surface-raised hover:bg-surface-hover border border-border-subtle transition-colors px-4 py-1.5 cursor-pointer"
           >
             Sign up
           </Link>

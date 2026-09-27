@@ -16,6 +16,7 @@ import { MerkleTreeViz } from "@/components/MerkleTreeViz";
 import { CrawlProgress } from "@/components/CrawlProgress";
 
 const PREVIEW_LIMIT = 8000;
+const CHANGED_PATHS_PREVIEW_LIMIT = 5;
 
 function normalizePath(path: string): string {
   const [pathname, query = ""] = path.split("?", 2);
@@ -63,6 +64,7 @@ export default function SiteDetailPage() {
   const [merkle, setMerkle] = useState<MerkleTreeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [rechecking, setRechecking] = useState(false);
+  const [downloading, setDownloading] = useState<"llms" | "full" | null>(null);
   const [tab, setTab] = useState<"content" | "full">("content");
   const [expandFull, setExpandFull] = useState(false);
   const [expandChangedPaths, setExpandChangedPaths] = useState(false);
@@ -70,6 +72,10 @@ export default function SiteDetailPage() {
   const prevStatus = useRef<Site["status"] | null>(null);
   const followingLatestVersion = useRef(true);
   const activeVersionId = useRef<string | null>(null);
+  const visibleChangedPaths =
+    activeVersion && expandChangedPaths
+      ? activeVersion.changed_paths
+      : activeVersion?.changed_paths.slice(0, CHANGED_PATHS_PREVIEW_LIMIT) ?? [];
 
   const refresh = useCallback(async () => {
     try {
@@ -148,6 +154,30 @@ export default function SiteDetailPage() {
     }
   }
 
+  async function downloadLlmsFile(full: boolean) {
+    if (!site) return;
+    const kind = full ? "full" : "llms";
+    setDownloading(kind);
+    try {
+      const content = await apiFetch<string>(
+        `/sites/${siteId}/${full ? "llms-full.txt" : "llms.txt"}`
+      );
+      const objectUrl = URL.createObjectURL(new Blob([content], { type: "text/plain" }));
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = `${site.domain}-${full ? "llms-full.txt" : "llms.txt"}`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : "Couldn't download the file.";
+      toast.error(message);
+    } finally {
+      setDownloading(null);
+    }
+  }
+
   if (!site) {
     return (
       <div className="p-8">
@@ -222,25 +252,27 @@ export default function SiteDetailPage() {
                   expandChangedPaths ? "max-h-96" : "max-h-40"
                 }`}
               >
-                {activeVersion.changed_paths.map((path) => (
-                <li key={path}>
-                  <button
-                    type="button"
-                    onClick={() => selectPage(path)}
-                    className="text-sm font-mono text-accent hover:underline text-left break-all cursor-pointer"
-                  >
-                    {path}
-                  </button>
-                </li>
+                {visibleChangedPaths.map((path) => (
+                  <li key={path}>
+                    <button
+                      type="button"
+                      onClick={() => selectPage(path)}
+                      className="text-sm font-mono text-accent hover:underline text-left break-all cursor-pointer"
+                    >
+                      {path}
+                    </button>
+                  </li>
                 ))}
               </ul>
-              <button
-                type="button"
-                onClick={() => setExpandChangedPaths((expanded) => !expanded)}
-                className="mt-2 text-xs text-accent hover:underline self-start cursor-pointer"
-              >
-                {expandChangedPaths ? "Show less" : "Show more changed pages"}
-              </button>
+              {activeVersion.changed_paths.length > CHANGED_PATHS_PREVIEW_LIMIT && (
+                <button
+                  type="button"
+                  onClick={() => setExpandChangedPaths((expanded) => !expanded)}
+                  className="mt-2 text-xs text-accent hover:underline self-start cursor-pointer"
+                >
+                  {expandChangedPaths ? "Show less" : "Show more changed pages"}
+                </button>
+              )}
             </>
           )}
         </section>
@@ -288,22 +320,22 @@ export default function SiteDetailPage() {
                 </button>
               </div>
               <div className="flex gap-2">
-                <a
-                  href={`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/sites/${siteId}/llms.txt`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-xs text-foreground-muted hover:text-foreground underline"
+                <button
+                  type="button"
+                  onClick={() => downloadLlmsFile(false)}
+                  disabled={downloading !== null}
+                  className="text-xs text-foreground-muted hover:text-foreground underline disabled:opacity-50 cursor-pointer"
                 >
-                  Download llms.txt
-                </a>
-                <a
-                  href={`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/sites/${siteId}/llms-full.txt`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-xs text-foreground-muted hover:text-foreground underline"
+                  {downloading === "llms" ? "Downloading…" : "Download llms.txt"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => downloadLlmsFile(true)}
+                  disabled={downloading !== null}
+                  className="text-xs text-foreground-muted hover:text-foreground underline disabled:opacity-50 cursor-pointer"
                 >
-                  Download full
-                </a>
+                  {downloading === "full" ? "Downloading…" : "Download full"}
+                </button>
               </div>
             </div>
             {selectedPath && tab === "content" && (

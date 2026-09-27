@@ -12,7 +12,6 @@ function SignupForm() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [companyName, setCompanyName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [sent, setSent] = useState(false);
@@ -32,9 +31,6 @@ function SignupForm() {
       password,
       options: {
         emailRedirectTo: redirectTo,
-        // Stashed so the onboarding step (post email-verify) can provision the
-        // company workspace without asking the user to type it in twice.
-        data: { pending_company_name: companyName },
       },
     });
 
@@ -63,16 +59,6 @@ function SignupForm() {
       subtitle="You'll need to verify your email before your dashboard unlocks."
     >
       <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-        <label className="flex flex-col gap-1 text-sm">
-          Company name
-          <input
-            required
-            value={companyName}
-            onChange={(e) => setCompanyName(e.target.value)}
-            placeholder="Acme Inc."
-            className="bg-surface border border-border-subtle rounded-lg px-3 py-2 outline-none focus:border-accent/60 transition-colors"
-          />
-        </label>
         <label className="flex flex-col gap-1 text-sm">
           Work email
           <input

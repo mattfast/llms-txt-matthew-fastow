@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import analytics, auth, quotes, sites
+from app.api.routes import analytics, api_keys, auth, quotes, sites
 from app.core.config import get_settings
 
 settings = get_settings()
@@ -31,6 +31,7 @@ app.include_router(sites.router, prefix="/api")
 app.include_router(auth.router, prefix="/api")
 app.include_router(quotes.router, prefix="/api")
 app.include_router(analytics.router, prefix="/api")
+app.include_router(api_keys.router, prefix="/api")
 
 
 @app.get("/health")

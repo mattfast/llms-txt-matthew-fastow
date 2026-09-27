@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from slugify import slugify
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -15,9 +14,8 @@ from app.services.email_client import send_welcome_email
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-
-class OnboardRequest(BaseModel):
-    company_name: str
+SHARED_COMPANY_NAME = "Profound"
+SHARED_COMPANY_SLUG = "profound"
 
 
 class ProfileOut(BaseModel):
@@ -44,12 +42,10 @@ def get_me(user: CurrentUser = Depends(get_current_user)):
 
 @router.post("/onboard", response_model=ProfileOut)
 def onboard(
-    body: OnboardRequest,
     db: Session = Depends(get_db),
     user: CurrentUser = Depends(get_current_user),
 ):
-    """Every distinct company name maps to one shared workspace, so teammates from the same
-    company land on the same dashboard/leaderboard - matching Profound's own multi-seat model.
+    """Provision every new user into the shared Profound workspace.
 
     Idempotent by design: the frontend may retry this call (e.g. a duplicate request racing
     the initial one), so a company-slug or profile-id conflict just means someone else's
@@ -60,16 +56,15 @@ def onboard(
     if not user.email:
         raise HTTPException(status_code=400, detail="Email required")
 
-    slug = slugify(body.company_name)
-    company = db.query(Company).filter(Company.slug == slug).one_or_none()
+    company = db.query(Company).filter(Company.slug == SHARED_COMPANY_SLUG).one_or_none()
     if not company:
-        company = Company(name=body.company_name, slug=slug)
+        company = Company(name=SHARED_COMPANY_NAME, slug=SHARED_COMPANY_SLUG)
         db.add(company)
         try:
             db.flush()
         except IntegrityError:
             db.rollback()
-            company = db.query(Company).filter(Company.slug == slug).one()
+            company = db.query(Company).filter(Company.slug == SHARED_COMPANY_SLUG).one()
 
     profile = db.query(Profile).filter(Profile.id == user.id).one_or_none()
     is_new_profile = profile is None

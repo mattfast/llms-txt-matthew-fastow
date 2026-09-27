@@ -1,6 +1,7 @@
 """Verifies Supabase-issued JWTs sent by the frontend and resolves the current user/profile."""
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 import httpx
 from fastapi import Depends, HTTPException, status
@@ -11,7 +12,9 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.db import get_db
+from app.models.api_key import ApiKey
 from app.models.company import Profile
+from app.services.api_keys import API_KEY_PREFIX, hash_api_key
 
 settings = get_settings()
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -84,7 +87,41 @@ def get_current_user(
     if credentials is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
 
-    payload = _decode_supabase_jwt(credentials.credentials)
+    token = credentials.credentials
+    if token.startswith(API_KEY_PREFIX):
+        api_key = (
+            db.query(ApiKey)
+            .filter(ApiKey.key_hash == hash_api_key(token), ApiKey.revoked_at.is_(None))
+            .one_or_none()
+        )
+        if not api_key:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key")
+        profile = (
+            db.query(Profile)
+            .filter(Profile.id == api_key.created_by, Profile.company_id == api_key.company_id)
+            .one_or_none()
+        )
+        if not profile:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="API key owner is unavailable")
+        api_key.last_used_at = datetime.now(timezone.utc)
+        db.commit()
+        return CurrentUser(id=profile.id, email=profile.email, profile=profile)
+
+    return _current_user_from_jwt(token, db)
+
+
+def get_jwt_current_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+    db: Session = Depends(get_db),
+) -> CurrentUser:
+    """Require a Supabase session token; API keys cannot administer API keys."""
+    if credentials is None or credentials.credentials.startswith(API_KEY_PREFIX):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+    return _current_user_from_jwt(credentials.credentials, db)
+
+
+def _current_user_from_jwt(token: str, db: Session) -> CurrentUser:
+    payload = _decode_supabase_jwt(token)
     user_id = payload.get("sub")
     if not user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token subject")
