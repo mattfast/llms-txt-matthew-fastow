@@ -1,0 +1,96 @@
+# Render Blueprint (https://render.com/docs/blueprint-spec). Push this repo, then
+# "New +" -> "Blueprint" in the Render dashboard and point it at the repo root.
+#
+# Services:
+#   - llms-txt-api:     the FastAPI backend (web service)
+#   - llms-txt-worker:  RQ worker that processes crawl/recheck jobs from Redis
+#   - llms-txt-cron:    daily job that enqueues rechecks for sites due for a refresh
+#   - llms-txt-redis:   managed Redis, used as the RQ job queue
+#
+# Postgres (with pgvector) is NOT defined here - use your Supabase project's Postgres
+# instance instead (set DATABASE_URL to its connection string below).
+services:
+  - type: web
+    name: llms-txt-api
+    runtime: python
+    region: oregon
+    plan: starter
+    rootDir: backend
+    buildCommand: "pip install -r requirements.txt && playwright install --with-deps chromium"
+    startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    healthCheckPath: /health
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: FRONTEND_BASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_JWT_SECRET
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: llms-txt-redis
+          property: connectionString
+
+  - type: worker
+    name: llms-txt-worker
+    runtime: python
+    region: oregon
+    plan: starter
+    rootDir: backend
+    buildCommand: "pip install -r requirements.txt && playwright install --with-deps chromium"
+    startCommand: "rq worker crawls --url $REDIS_URL"
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_JWT_SECRET
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: llms-txt-redis
+          property: connectionString
+
+  - type: cron
+    name: llms-txt-cron
+    runtime: python
+    region: oregon
+    plan: starter
+    rootDir: backend
+    buildCommand: "pip install -r requirements.txt"
+    schedule: "0 */6 * * *"
+    startCommand: "python -m app.workers.cron_recheck"
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_JWT_SECRET
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: llms-txt-redis
+          property: connectionString
+
+  - type: redis
+    name: llms-txt-redis
+    region: oregon
+    plan: starter
+    ipAllowList: []

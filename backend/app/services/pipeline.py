@@ -1,0 +1,132 @@
+"""Orchestrates one crawl (initial or recheck): crawl -> Merkle diff -> regenerate llms.txt
+for changed sections only -> embed -> persist. This is the single place that ties the crawler,
+Merkle tree, and llms.txt generator together."""
+from __future__ import annotations
+
+import asyncio
+import re
+from collections import Counter
+from datetime import datetime, timezone
+
+from sqlalchemy.orm import Session
+
+from app.models.analytics import Topic
+from app.models.jobs import CrawlJob
+from app.models.site import LlmsTxtVersion, Page, Site
+from app.services import llms_generator
+from app.services.cost_tracker import make_usage_logger
+from app.services.crawler import Crawler
+from app.services.llm_client import embed_texts
+from app.services.merkle import MerkleTree
+
+_STOPWORDS = {
+    "the", "and", "for", "with", "your", "our", "you", "are", "from", "this", "that",
+    "how", "what", "why", "into", "about", "get", "learn", "more", "home", "page",
+}
+
+
+def run_crawl_job(db: Session, site: Site, job: CrawlJob) -> None:
+    on_usage = make_usage_logger(db, company_id=site.company_id, site_id=site.id, crawl_job_id=job.id)
+
+    pages = asyncio.run(Crawler(site.root_url).crawl())
+    job.pages_discovered = len(pages)
+    if not pages:
+        job.status = "error"
+        job.error_message = "Crawl returned zero pages (site may block bots or be unreachable)."
+        job.finished_at = datetime.now(timezone.utc)
+        site.status = "error"
+        db.commit()
+        return
+
+    new_leaf_hashes = {p.path: p.content_hash for p in pages}
+    new_tree = MerkleTree(new_leaf_hashes)
+
+    existing_pages = {p.path: p for p in db.query(Page).filter(Page.site_id == site.id).all()}
+    old_tree = MerkleTree({path: p.content_hash for path, p in existing_pages.items()}) if existing_pages else None
+
+    unchanged_recheck = job.job_type == "recheck" and old_tree is not None and old_tree.root_hash == new_tree.root_hash
+    if unchanged_recheck:
+        job.status = "done"
+        job.pages_crawled = len(pages)
+        job.pages_changed = 0
+        job.finished_at = datetime.now(timezone.utc)
+        site.status = "ready"
+        site.last_crawled_at = datetime.now(timezone.utc)
+        db.commit()
+        return
+
+    changed_paths = old_tree.changed_leaf_paths(new_tree) if old_tree else set(new_leaf_hashes)
+
+    _upsert_pages(db, site, pages, existing_pages, changed_paths, on_usage)
+    _refresh_topics(db, site, pages)
+
+    generated = llms_generator.generate(site.root_url, site.domain, pages, on_usage=on_usage)
+    next_version = (
+        db.query(LlmsTxtVersion)
+        .filter(LlmsTxtVersion.site_id == site.id)
+        .order_by(LlmsTxtVersion.version_number.desc())
+        .first()
+    )
+    version_number = (next_version.version_number + 1) if next_version else 1
+    db.add(
+        LlmsTxtVersion(
+            site_id=site.id,
+            version_number=version_number,
+            content=generated.content,
+            full_content=generated.full_content,
+            changed_paths=sorted(changed_paths),
+            diff_summary=llms_generator.diff_summary(changed_paths, len(pages)),
+        )
+    )
+
+    site.merkle_root_hash = new_tree.root_hash
+    site.pages_discovered = len(pages)
+    site.pages_crawled = len(pages)
+    site.status = "ready"
+    site.last_crawled_at = datetime.now(timezone.utc)
+
+    job.status = "done"
+    job.pages_crawled = len(pages)
+    job.pages_changed = len(changed_paths)
+    job.finished_at = datetime.now(timezone.utc)
+
+    db.commit()
+
+
+def _upsert_pages(db, site, pages, existing_pages, changed_paths, on_usage) -> None:
+    changed_page_objs = [p for p in pages if p.path in changed_paths]
+    embeddings = embed_texts([p.text_excerpt or p.title for p in changed_page_objs], on_usage=on_usage)
+    embedding_by_path = {p.path: emb for p, emb in zip(changed_page_objs, embeddings)}
+
+    for page in pages:
+        row = existing_pages.get(page.path)
+        if row is None:
+            row = Page(site_id=site.id, path=page.path)
+            db.add(row)
+        row.url = page.url
+        row.title = page.title
+        row.description = page.description
+        row.section = page.section
+        row.content_hash = page.content_hash
+        row.raw_text_excerpt = page.text_excerpt
+        if page.path in embedding_by_path and embedding_by_path[page.path]:
+            row.embedding = embedding_by_path[page.path]
+
+    stale_paths = set(existing_pages) - {p.path for p in pages}
+    for path in stale_paths:
+        db.delete(existing_pages[path])
+
+
+def _refresh_topics(db: Session, site: Site, pages) -> None:
+    """Cheap, LLM-free topic extraction: frequency of meaningful words across page titles.
+    Powers the cross-company "topics frequently mentioned" analytics view."""
+    words = Counter()
+    for page in pages:
+        for word in re.findall(r"[a-zA-Z]{4,}", f"{page.title} {page.description or ''}"):
+            lower = word.lower()
+            if lower not in _STOPWORDS:
+                words[lower] += 1
+
+    db.query(Topic).filter(Topic.site_id == site.id).delete()
+    for name, count in words.most_common(25):
+        db.add(Topic(company_id=site.company_id, site_id=site.id, name=name, mention_count=count))

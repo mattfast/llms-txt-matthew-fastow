@@ -1,0 +1,88 @@
+@import "tailwindcss";
+
+:root {
+  --background: #000000;
+  --surface: #0d0d0f;
+  --surface-raised: #1a1a1c;
+  --surface-hover: #242426;
+  --border-subtle: #2a2a2d;
+  --foreground: #edf2f5;
+  --foreground-muted: #9a9ea3;
+  --accent: #6366f1;
+  --accent-soft: #6366f1;
+  --success: #34d399;
+  --danger: #f87171;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-hover: var(--surface-hover);
+  --color-border-subtle: var(--border-subtle);
+  --color-foreground: var(--foreground);
+  --color-foreground-muted: var(--foreground-muted);
+  --color-accent: var(--accent);
+  --color-success: var(--success);
+  --color-danger: var(--danger);
+  --font-sans: var(--font-inter);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background: radial-gradient(circle at 20% 0%, rgba(99, 102, 241, 0.12), transparent 45%),
+    var(--background);
+  color: var(--foreground);
+  font-family: var(--font-inter), -apple-system, "Segoe UI", Roboto, sans-serif;
+  min-height: 100vh;
+}
+
+::selection {
+  background: var(--accent);
+  color: #fff;
+}
+
+.pill {
+  border-radius: 9999px;
+}
+
+.card {
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: 16px;
+}
+
+@keyframes fade-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-slide-up {
+  animation: fade-slide-up 0.4s ease-out both;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--surface-hover);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
