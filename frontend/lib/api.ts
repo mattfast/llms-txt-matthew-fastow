@@ -27,7 +27,15 @@ export async function apiFetch<T>(
     headers.set("Authorization", `Bearer ${session.access_token}`);
   }
 
-  const res = await fetch(`${API_BASE_URL}/api${path}`, { ...options, headers });
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}/api${path}`, { ...options, headers });
+  } catch {
+    // fetch() throws a plain TypeError (not an ApiError) for network-level failures
+    // (DNS, CORS, offline, etc). Normalize it so every caller's `instanceof ApiError`
+    // check still fires instead of silently swallowing the failure.
+    throw new ApiError("Couldn't reach the server. Please check your connection and try again.", 0);
+  }
   if (!res.ok) {
     const body = await res.text();
     throw new ApiError(body || res.statusText, res.status);

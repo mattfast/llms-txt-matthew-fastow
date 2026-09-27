@@ -241,7 +241,7 @@ function SitesContent() {
 
       <AnimatePresence>
         {visibleSites === null ? (
-          <p className="text-foreground-muted text-sm">Loading…</p>
+          error ? null : <p className="text-foreground-muted text-sm">Loading…</p>
         ) : visibleSites.length === 0 ? (
           <p className="text-foreground-muted text-sm">
             {sites && sites.length > 0

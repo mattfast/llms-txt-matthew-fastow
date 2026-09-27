@@ -7,12 +7,16 @@ import type { TopicEntry } from "@/lib/types";
 
 export default function TopicsPage() {
   const [topics, setTopics] = useState<TopicEntry[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     apiFetch<TopicEntry[]>("/analytics/topics")
       .then(setTopics)
       .catch((err) => {
-        if (err instanceof ApiError) toast.error(err.message || "Couldn't load topic insights");
+        if (err instanceof ApiError) {
+          setError(err.message || "Couldn't load topic insights");
+          toast.error(err.message || "Couldn't load topic insights");
+        }
       });
   }, []);
 
@@ -26,7 +30,11 @@ export default function TopicsPage() {
       </p>
 
       {topics === null ? (
-        <p className="text-foreground-muted text-sm">Loading…</p>
+        error ? (
+          <p className="text-danger text-sm">{error}</p>
+        ) : (
+          <p className="text-foreground-muted text-sm">Loading…</p>
+        )
       ) : topics.length === 0 ? (
         <p className="text-foreground-muted text-sm">No topics extracted yet.</p>
       ) : (

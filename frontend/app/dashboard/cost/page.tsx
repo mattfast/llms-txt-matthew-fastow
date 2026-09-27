@@ -21,12 +21,16 @@ const COLORS = ["#6366f1", "#34d399", "#f59e0b", "#f87171", "#38bdf8"];
 
 export default function CostTrackerPage() {
   const [cost, setCost] = useState<CostSummary | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     apiFetch<CostSummary>("/analytics/cost")
       .then(setCost)
       .catch((err) => {
-        if (err instanceof ApiError) toast.error(err.message || "Couldn't load cost data");
+        if (err instanceof ApiError) {
+          setError(err.message || "Couldn't load cost data");
+          toast.error(err.message || "Couldn't load cost data");
+        }
       });
   }, []);
 
@@ -38,7 +42,11 @@ export default function CostTrackerPage() {
       </p>
 
       {cost === null ? (
-        <p className="text-foreground-muted text-sm">Loading…</p>
+        error ? (
+          <p className="text-danger text-sm">{error}</p>
+        ) : (
+          <p className="text-foreground-muted text-sm">Loading…</p>
+        )
       ) : (
         <div className="flex flex-col gap-6">
           <div className="card p-6">

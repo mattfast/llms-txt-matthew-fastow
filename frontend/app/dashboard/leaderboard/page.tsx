@@ -9,12 +9,16 @@ const MEDALS = ["🥇", "🥈", "🥉"];
 
 export default function LeaderboardPage() {
   const [entries, setEntries] = useState<LeaderboardEntry[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     apiFetch<LeaderboardEntry[]>("/analytics/leaderboard")
       .then(setEntries)
       .catch((err) => {
-        if (err instanceof ApiError) toast.error(err.message || "Couldn't load the leaderboard");
+        if (err instanceof ApiError) {
+          setError(err.message || "Couldn't load the leaderboard");
+          toast.error(err.message || "Couldn't load the leaderboard");
+        }
       });
   }, []);
 
@@ -26,7 +30,11 @@ export default function LeaderboardPage() {
       </p>
 
       {entries === null ? (
-        <p className="text-foreground-muted text-sm">Loading…</p>
+        error ? (
+          <p className="text-danger text-sm">{error}</p>
+        ) : (
+          <p className="text-foreground-muted text-sm">Loading…</p>
+        )
       ) : entries.length === 0 ? (
         <p className="text-foreground-muted text-sm">No sites generated yet.</p>
       ) : (
