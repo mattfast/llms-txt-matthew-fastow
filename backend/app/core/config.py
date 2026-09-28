@@ -33,12 +33,11 @@ class Settings(BaseSettings):
     email_from: str = "llms.txt by Profound <noreply@llms-txt-profound.com>"
 
     # --- Crawler ---
-    max_pages_per_site: int = 150
+    max_pages_per_site: int = 100
     crawl_concurrency: int = 8
     crawl_timeout_seconds: int = 15
     crawl_js_render_limit: int = 50
     crawl_job_timeout_seconds: int = 1800
-    recheck_interval_hours: int = 6
     user_agent: str = "ProfoundLlmsTxtBot/1.0 (+https://tryprofound.com)"
 
     # --- Pricing (USD per 1K tokens) used for the cost tracker ---

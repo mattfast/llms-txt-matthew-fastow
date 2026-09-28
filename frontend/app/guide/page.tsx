@@ -203,7 +203,7 @@ export default function UserGuidePage() {
               the retry button queues a fresh crawl.
             </Step>
             <Step title="Choose a page limit">
-              New sites default to a maximum of 150 pages. You can raise the limit in a site’s
+              New sites default to a maximum of 100 pages. You can raise the limit in a site’s
               crawl settings; higher limits send more requests, may take longer and cost more, and
               can cause some sites to throttle or block the crawler.
             </Step>

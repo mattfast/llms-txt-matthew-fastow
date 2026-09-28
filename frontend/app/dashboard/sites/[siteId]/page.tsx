@@ -17,7 +17,7 @@ import { CrawlProgress } from "@/components/CrawlProgress";
 
 const PREVIEW_LIMIT = 8000;
 const CHANGED_PATHS_PREVIEW_LIMIT = 5;
-const DEFAULT_CRAWL_PAGE_LIMIT = 150;
+const DEFAULT_CRAWL_PAGE_LIMIT = 100;
 
 function normalizePath(path: string): string {
   const [pathname, query = ""] = path.split("?", 2);
