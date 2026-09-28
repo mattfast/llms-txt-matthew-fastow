@@ -13,7 +13,7 @@ class CrawlActivityOut(BaseModel):
 
 class SiteCreateRequest(BaseModel):
     url: HttpUrl
-    max_pages: int = Field(default=500, ge=1, le=5000)
+    max_pages: int = Field(default=150, ge=1, le=5000)
     allow_subdomains: bool = True
     include_patterns: list[str] = Field(default_factory=list, max_length=50)
     exclude_patterns: list[str] = Field(default_factory=list, max_length=50)

@@ -37,6 +37,12 @@ export default function HomePage() {
         <Logo />
         <nav className="flex items-center gap-3 text-sm">
           <Link
+            href="/guide"
+            className="text-foreground-muted hover:text-foreground transition-colors px-3 py-1.5 cursor-pointer"
+          >
+            User guide
+          </Link>
+          <Link
             href="/login"
             className="text-foreground-muted hover:text-foreground transition-colors px-3 py-1.5 cursor-pointer"
           >

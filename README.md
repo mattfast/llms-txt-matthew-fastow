@@ -173,7 +173,9 @@ That migration promotes the earliest existing profile in each company to admin a
 other existing profiles as members; the first profile in a newly-created workspace is
 also assigned admin. Team invitations use `004_team_invitations.sql`; invitation links expire
 after 24 hours and can be revoked by an admin. Downloadable CSV/JSON reports are available
-from the Sites and Topic Insights pages.
+from the Sites and Topic Insights pages. The default crawl limit of 150 pages is set by
+`005_reduce_default_crawl_limit.sql`; that migration updates existing sites still using the
+previous 500-page default while preserving sites configured with other limits.
 
 Set `NEXT_PUBLIC_APP_URL` in `frontend/.env.local` to `http://localhost:3000` for local
 development and to the deployed frontend origin in production. Add each corresponding

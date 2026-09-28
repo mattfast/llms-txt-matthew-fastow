@@ -14,6 +14,7 @@ import {
   Coins,
   KeyRound,
   UsersRound,
+  BookOpen,
   type LucideIcon,
   Menu,
   X,
@@ -29,6 +30,7 @@ const NAV_ITEMS: { href: string; label: string; icon: LucideIcon; adminOnly?: bo
   { href: "/dashboard/cost", label: "Cost tracker", icon: Coins },
   { href: "/dashboard/api", label: "API access", icon: KeyRound, adminOnly: true },
   { href: "/dashboard/team", label: "Team & audit", icon: UsersRound, adminOnly: true },
+  { href: "/guide", label: "User guide", icon: BookOpen },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {

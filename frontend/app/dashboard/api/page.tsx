@@ -21,7 +21,7 @@ const API_BASE_PATH = `${API_BASE_URL.replace(/\/$/, "")}/api`;
 
 const ENDPOINTS = [
   ["GET", "/sites", "List company sites and crawl status."],
-  ["POST", "/sites", 'Start a crawl. JSON body: {"url":"https://example.com"}'],
+  ["POST", "/sites", 'Start a crawl. JSON body: {"url":"https://example.com","max_pages":150}; max_pages defaults to 150. Higher limits may trigger throttling or blocking, increase crawl time, and raise costs.'],
   ["GET", "/sites/{site_id}", "Get site details and crawl activity."],
   ["PATCH", "/sites/{site_id}/settings", "Update page cap, subdomain scope, and URL patterns."],
   ["DELETE", "/sites/{site_id}", "Delete a site and its generated data."],

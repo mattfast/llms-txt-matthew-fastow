@@ -17,6 +17,7 @@ import { CrawlProgress } from "@/components/CrawlProgress";
 
 const PREVIEW_LIMIT = 8000;
 const CHANGED_PATHS_PREVIEW_LIMIT = 5;
+const DEFAULT_CRAWL_PAGE_LIMIT = 150;
 
 function normalizePath(path: string): string {
   const [pathname, query = ""] = path.split("?", 2);
@@ -68,7 +69,7 @@ export default function SiteDetailPage() {
   const [coverage, setCoverage] = useState<CrawlCoverage | null>(null);
   const [editingSettings, setEditingSettings] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
-  const [maxPages, setMaxPages] = useState(500);
+  const [maxPages, setMaxPages] = useState(DEFAULT_CRAWL_PAGE_LIMIT);
   const [allowSubdomains, setAllowSubdomains] = useState(true);
   const [includePatterns, setIncludePatterns] = useState("");
   const [excludePatterns, setExcludePatterns] = useState("");
@@ -293,7 +294,7 @@ export default function SiteDetailPage() {
         {editingSettings && (
           <form onSubmit={saveCrawlSettings} className="mt-4 flex flex-col gap-4">
             <label className="flex flex-col gap-1 text-sm">
-              Maximum pages (1–5000)
+              Maximum pages (1–5000; default {DEFAULT_CRAWL_PAGE_LIMIT})
               <input
                 type="number"
                 min={1}
@@ -304,6 +305,15 @@ export default function SiteDetailPage() {
                 className="card px-3 py-2 text-sm outline-none focus:border-accent/60"
               />
             </label>
+            {maxPages > DEFAULT_CRAWL_PAGE_LIMIT && (
+              <p
+                role="status"
+                className="rounded-lg border border-amber-500/25 bg-amber-500/5 p-3 text-xs leading-5 text-amber-200"
+              >
+                A higher page limit sends more requests and may make crawls take longer or cost more.
+                Some sites may throttle or block crawlers that make too many requests.
+              </p>
+            )}
             <label className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
