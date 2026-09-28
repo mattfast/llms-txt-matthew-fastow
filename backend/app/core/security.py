@@ -130,6 +130,14 @@ def _current_user_from_jwt(token: str, db: Session) -> CurrentUser:
     return CurrentUser(id=user_id, email=payload.get("email"), profile=profile)
 
 
+def require_jwt_admin(
+    user: CurrentUser = Depends(get_jwt_current_user),
+) -> CurrentUser:
+    if not user.profile or user.profile.role != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Company admin access required")
+    return user
+
+
 def get_optional_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
     db: Session = Depends(get_db),

@@ -1,9 +1,36 @@
+"use client";
+
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { UrlBox } from "@/components/UrlBox";
 import { RotatingQuote } from "@/components/RotatingQuote";
 import { Logo } from "@/components/Logo";
 import Link from "next/link";
+import { useAuth } from "@/lib/auth-context";
 
 export default function HomePage() {
+  const router = useRouter();
+  const { session, loading } = useAuth();
+
+  useEffect(() => {
+    if (!loading && session) {
+      const pendingUrl = sessionStorage.getItem("pending_site_url");
+      router.replace(
+        pendingUrl
+          ? `/dashboard?new=${encodeURIComponent(pendingUrl)}`
+          : "/dashboard"
+      );
+    }
+  }, [loading, router, session]);
+
+  if (loading || session) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <span className="w-6 h-6 rounded-full border-2 border-accent border-t-transparent animate-spin" />
+      </div>
+    );
+  }
+
   return (
     <div className="flex-1 flex flex-col">
       <header className="relative z-10 flex items-center justify-between px-6 py-5 max-w-6xl mx-auto w-full">

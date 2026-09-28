@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.core.db import get_db
 from app.core.security import CurrentUser, get_current_user
 from app.models.company import Company, Profile
+from app.services.audit import record_audit_event
 from app.services.email_client import send_welcome_email
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -23,6 +24,7 @@ class ProfileOut(BaseModel):
     email: str
     company_id: str
     company_name: str
+    role: str
 
     model_config = {"from_attributes": True}
 
@@ -37,6 +39,7 @@ def get_me(user: CurrentUser = Depends(get_current_user)):
         "onboarded": True,
         "company_id": user.profile.company_id,
         "company_name": user.profile.company.name,
+        "role": user.profile.role,
     }
 
 
@@ -52,7 +55,13 @@ def onboard(
     concurrent request won the race - we recover by re-reading what they created instead of
     surfacing a 500."""
     if user.profile:
-        raise HTTPException(status_code=400, detail="Already onboarded")
+        return ProfileOut(
+            id=user.profile.id,
+            email=user.profile.email,
+            company_id=user.profile.company_id,
+            company_name=user.profile.company.name,
+            role=user.profile.role,
+        )
     if not user.email:
         raise HTTPException(status_code=400, detail="Email required")
 
@@ -65,13 +74,30 @@ def onboard(
         except IntegrityError:
             db.rollback()
             company = db.query(Company).filter(Company.slug == SHARED_COMPANY_SLUG).one()
+    company = db.query(Company).filter(Company.id == company.id).with_for_update().one()
 
     profile = db.query(Profile).filter(Profile.id == user.id).one_or_none()
     is_new_profile = profile is None
     if not profile:
-        profile = Profile(id=user.id, company_id=company.id, email=user.email)
+        first_member = db.query(Profile.id).filter(Profile.company_id == company.id).first() is None
+        profile = Profile(
+            id=user.id,
+            company_id=company.id,
+            email=user.email,
+            role="admin" if first_member else "member",
+        )
         db.add(profile)
         try:
+            db.flush()
+            record_audit_event(
+                db,
+                company_id=company.id,
+                actor_id=user.id,
+                action="member.joined",
+                resource_type="profile",
+                resource_id=user.id,
+                details={"email": user.email, "role": profile.role},
+            )
             db.commit()
         except IntegrityError:
             db.rollback()
@@ -84,5 +110,9 @@ def onboard(
         # concurrent retry that recovered someone else's row should not send a duplicate.
         send_welcome_email(profile.email, company.name)
     return ProfileOut(
-        id=profile.id, email=profile.email, company_id=company.id, company_name=company.name
+        id=profile.id,
+        email=profile.email,
+        company_id=company.id,
+        company_name=company.name,
+        role=profile.role,
     )

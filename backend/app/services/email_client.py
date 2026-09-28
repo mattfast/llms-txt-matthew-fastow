@@ -4,6 +4,8 @@ email provider can never break onboarding or the crawl pipeline."""
 from __future__ import annotations
 
 import logging
+from html import escape
+from email.utils import parseaddr
 
 import httpx
 
@@ -16,9 +18,14 @@ _RESEND_ENDPOINT = "https://api.resend.com/emails"
 
 
 def send_email(to: str, subject: str, html: str) -> bool:
+    delivered, _ = send_email_with_error(to, subject, html)
+    return delivered
+
+
+def send_email_with_error(to: str, subject: str, html: str) -> tuple[bool, str | None]:
     if not settings.resend_api_key:
         logger.info("RESEND_API_KEY not configured; skipping email %r to %s", subject, to)
-        return False
+        return False, "RESEND_API_KEY is not configured for the backend."
     try:
         resp = httpx.post(
             _RESEND_ENDPOINT,
@@ -28,10 +35,24 @@ def send_email(to: str, subject: str, html: str) -> bool:
         )
         if resp.status_code >= 300:
             logger.warning("Resend send failed (%s): %s", resp.status_code, resp.text[:500])
-        return resp.status_code < 300
+            try:
+                payload = resp.json()
+                provider_message = payload.get("message") or payload.get("name")
+            except (ValueError, AttributeError):
+                provider_message = None
+            message = str(provider_message)[:300] if provider_message else f"Resend returned HTTP {resp.status_code}."
+            sender = parseaddr(settings.email_from)[1]
+            if sender.lower().endswith("@resend.dev"):
+                message = (
+                    "The configured resend.dev test sender is restricted to its verified account recipient. "
+                    "Use an address on a verified sender domain to email other invitees. "
+                    f"Resend: {message}"
+                )
+            return False, message
+        return True, None
     except httpx.HTTPError as exc:
         logger.warning("Resend send raised: %s", exc)
-        return False
+        return False, "Could not reach Resend to deliver the email."
 
 
 def _shell(preheader: str, body_html: str) -> str:
@@ -126,3 +147,29 @@ def send_first_crawl_congrats_email(to: str, domain: str) -> bool:
     </div>
     """
     return send_email(to, "🎊 Your first llms.txt is ready!", _shell("Your first site is crawled.", body))
+
+
+def send_team_invitation_email(
+    to: str,
+    company_name: str,
+    inviter_email: str,
+    role: str,
+    token: str,
+) -> tuple[bool, str | None]:
+    invite_url = f"{settings.frontend_base_url}/invite?token={token}"
+    body = f"""
+    <h1 style="font-size:20px;margin:0 0 12px 0;color:#ffffff;">You&rsquo;re invited to {escape(company_name)}</h1>
+    <p style="margin:0 0 16px 0;">
+      {escape(inviter_email)} invited you to join the workspace as a <strong>{escape(role)}</strong>.
+      This invitation link expires in 24 hours.
+    </p>
+    <div style="margin-top:24px;">
+      <a href="{escape(invite_url, quote=True)}" style="display:inline-block;background:#6366f1;color:#ffffff;text-decoration:none;
+         font-weight:600;font-size:14px;padding:10px 20px;border-radius:9999px;">Accept invitation →</a>
+    </div>
+    """
+    return send_email_with_error(
+        to,
+        f"You’re invited to {company_name}",
+        _shell("Your workspace invitation expires in 24 hours.", body),
+    )

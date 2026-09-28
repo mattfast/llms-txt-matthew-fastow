@@ -99,6 +99,30 @@ class CrawlerTests(unittest.TestCase):
 
         self.assertEqual(page.path, "/pricing?plan=pro")
 
+    def test_applies_include_exclude_and_subdomain_scope(self):
+        crawler = Crawler(
+            "https://example.com",
+            allow_subdomains=False,
+            include_patterns=["/docs/*"],
+            exclude_patterns=["/docs/private*"],
+        )
+        crawler._robots.parse([])
+
+        self.assertIsNone(crawler._scope_reason("https://example.com/"))
+        self.assertIsNone(crawler._scope_reason("https://example.com/docs/start"))
+        self.assertEqual(
+            crawler._scope_reason("https://example.com/pricing"),
+            "Does not match an include URL pattern",
+        )
+        self.assertEqual(
+            crawler._scope_reason("https://example.com/docs/private"),
+            "Excluded by URL pattern",
+        )
+        self.assertEqual(
+            crawler._scope_reason("https://docs.example.com/docs/start"),
+            "Outside the selected hostname scope",
+        )
+
 
 class SitemapTests(unittest.IsolatedAsyncioTestCase):
     async def test_recursively_follows_sitemap_indexes(self):
@@ -206,6 +230,32 @@ class CrawlTraversalTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("https://example.com/products", activity["recently_crawled"])
         self.assertIn("https://example.com/products", activity["recently_discovered"])
         self.assertIsNone(activity["current_url"])
+
+    async def test_marks_urls_beyond_page_cap_as_skipped(self):
+        html = (
+            "<html><title>Home</title><main><p>"
+            + ("Useful site content. " * 20)
+            + '</p><a href="/one">One</a><a href="/two">Two</a></main></html>'
+        )
+        client = FakeClient({"https://example.com/": html})
+        crawler = Crawler("https://example.com", max_pages=1)
+
+        async def allow_all_robots(_):
+            crawler._robots.parse([])
+
+        with (
+            patch.object(Crawler, "_load_robots", new_callable=AsyncMock, side_effect=allow_all_robots),
+            patch.object(Crawler, "_discover_from_sitemap", new_callable=AsyncMock, return_value=[]),
+            patch.object(crawler_module.httpx, "AsyncClient", return_value=client),
+            patch.object(crawler_module.settings, "crawl_js_render_limit", 0),
+            patch.object(crawler_module.settings, "crawl_concurrency", 1),
+        ):
+            result = await crawler.crawl()
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(crawler.coverage["summary"]["discovered"], 3)
+        self.assertEqual(crawler.coverage["summary"]["crawled"], 1)
+        self.assertEqual(crawler.coverage["summary"]["skipped"], 2)
 
 
 if __name__ == "__main__":

@@ -2,11 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { apiFetch, ApiError } from "@/lib/api";
 import type {
   CrawlJob,
+  CrawlCoverage,
   LlmsTxtVersion,
   LlmsTxtVersionSummary,
   MerkleTreeResponse,
@@ -65,6 +65,13 @@ export default function SiteDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [rechecking, setRechecking] = useState(false);
   const [downloading, setDownloading] = useState<"llms" | "full" | null>(null);
+  const [coverage, setCoverage] = useState<CrawlCoverage | null>(null);
+  const [editingSettings, setEditingSettings] = useState(false);
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [maxPages, setMaxPages] = useState(500);
+  const [allowSubdomains, setAllowSubdomains] = useState(true);
+  const [includePatterns, setIncludePatterns] = useState("");
+  const [excludePatterns, setExcludePatterns] = useState("");
   const [tab, setTab] = useState<"content" | "full">("content");
   const [expandFull, setExpandFull] = useState(false);
   const [expandChangedPaths, setExpandChangedPaths] = useState(false);
@@ -87,6 +94,7 @@ export default function SiteDetailPage() {
       setSite(siteData);
       setJobs(jobsData);
       setVersions(versionsData);
+      setCoverage(jobsData.find((job) => job.coverage)?.coverage ?? null);
 
       if (siteData.status === "ready") {
         const [latest, tree] = await Promise.all([
@@ -178,6 +186,38 @@ export default function SiteDetailPage() {
     }
   }
 
+  function editCrawlSettings() {
+    if (!site) return;
+    setMaxPages(site.max_pages);
+    setAllowSubdomains(site.allow_subdomains);
+    setIncludePatterns(site.include_patterns.join("\n"));
+    setExcludePatterns(site.exclude_patterns.join("\n"));
+    setEditingSettings(true);
+  }
+
+  async function saveCrawlSettings(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSavingSettings(true);
+    try {
+      const updated = await apiFetch<Site>(`/sites/${siteId}/settings`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          max_pages: maxPages,
+          allow_subdomains: allowSubdomains,
+          include_patterns: includePatterns.split("\n").map((pattern) => pattern.trim()).filter(Boolean),
+          exclude_patterns: excludePatterns.split("\n").map((pattern) => pattern.trim()).filter(Boolean),
+        }),
+      });
+      setSite(updated);
+      setEditingSettings(false);
+      toast.success("Crawl settings saved. Run a recheck to apply them.");
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Couldn't save crawl settings.");
+    } finally {
+      setSavingSettings(false);
+    }
+  }
+
   if (!site) {
     return (
       <div className="p-8">
@@ -222,14 +262,135 @@ export default function SiteDetailPage() {
         </div>
         <button
           onClick={triggerRecheck}
-          disabled={rechecking || site.status !== "ready"}
+          disabled={rechecking || site.status === "pending" || site.status === "crawling"}
           className="pill bg-surface-raised hover:bg-surface-hover border border-border-subtle transition-colors px-4 py-2 text-sm disabled:opacity-50 cursor-pointer self-start sm:self-auto"
         >
-          {rechecking ? "Queuing…" : "Recheck now"}
+          {rechecking ? "Queuing…" : site.status === "error" ? "Retry crawl" : "Recheck now"}
         </button>
       </div>
 
       {error && <p className="text-danger text-sm">{error}</p>}
+
+      <section className="card p-5">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="font-medium">Crawl settings</h2>
+            <p className="text-xs text-foreground-muted mt-1">
+              Up to {site.max_pages} pages · {site.allow_subdomains ? "subdomains included" : "root hostname only"}
+            </p>
+          </div>
+          {!editingSettings && (
+            <button
+              type="button"
+              onClick={editCrawlSettings}
+              disabled={site.status === "pending" || site.status === "crawling"}
+              className="pill border border-border-subtle px-3 py-1.5 text-xs hover:bg-surface-hover disabled:opacity-50 cursor-pointer"
+            >
+              Edit settings
+            </button>
+          )}
+        </div>
+        {editingSettings && (
+          <form onSubmit={saveCrawlSettings} className="mt-4 flex flex-col gap-4">
+            <label className="flex flex-col gap-1 text-sm">
+              Maximum pages (1–5000)
+              <input
+                type="number"
+                min={1}
+                max={5000}
+                required
+                value={maxPages}
+                onChange={(event) => setMaxPages(Number(event.target.value))}
+                className="card px-3 py-2 text-sm outline-none focus:border-accent/60"
+              />
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={allowSubdomains}
+                onChange={(event) => setAllowSubdomains(event.target.checked)}
+              />
+              Include subdomains
+            </label>
+            <label className="flex flex-col gap-1 text-sm">
+              Include URL patterns <span className="text-xs text-foreground-muted">One glob per line, e.g. /docs/*; leave blank to include all paths.</span>
+              <textarea
+                value={includePatterns}
+                onChange={(event) => setIncludePatterns(event.target.value)}
+                rows={3}
+                className="card px-3 py-2 text-sm outline-none focus:border-accent/60"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-sm">
+              Exclude URL patterns <span className="text-xs text-foreground-muted">Excluded paths always take precedence over include patterns.</span>
+              <textarea
+                value={excludePatterns}
+                onChange={(event) => setExcludePatterns(event.target.value)}
+                rows={3}
+                className="card px-3 py-2 text-sm outline-none focus:border-accent/60"
+              />
+            </label>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setEditingSettings(false)}
+                className="pill border border-border-subtle px-3 py-2 text-xs hover:bg-surface-hover cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={savingSettings || maxPages < 1 || maxPages > 5000}
+                className="pill bg-accent px-3 py-2 text-xs text-white disabled:opacity-50 cursor-pointer"
+              >
+                {savingSettings ? "Saving…" : "Save settings"}
+              </button>
+            </div>
+          </form>
+        )}
+      </section>
+
+      {coverage && (
+        <section className="card p-5">
+          <h2 className="font-medium mb-3">Crawl coverage</h2>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+            {[
+              ["Discovered", coverage.summary.discovered],
+              ["Crawled", coverage.summary.crawled],
+              ["Skipped", coverage.summary.skipped],
+              ["Failed", coverage.summary.failed],
+            ].map(([label, count]) => (
+              <div key={label} className="rounded-lg bg-surface p-3">
+                <p className="text-xs text-foreground-muted">{label}</p>
+                <p className="text-xl font-semibold mt-1">{count}</p>
+              </div>
+            ))}
+          </div>
+          <div className="max-h-72 overflow-y-auto divide-y divide-border-subtle">
+            {coverage.pages.slice(0, 200).map((page) => (
+              <div key={page.url} className="py-2 flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 text-xs">
+                <span className="font-mono break-all flex-1">{page.url}</span>
+                <span className={`uppercase font-semibold ${
+                  page.status === "crawled" ? "text-emerald-400" :
+                  page.status === "failed" ? "text-red-400" :
+                  page.status === "skipped" ? "text-amber-400" : "text-foreground-muted"
+                }`}>{page.status}</span>
+                {page.reason && <span className="text-foreground-muted">{page.reason}</span>}
+              </div>
+            ))}
+          </div>
+          {coverage.pages.length > 200 && (
+            <p className="text-xs text-foreground-muted mt-3">
+              Showing 200 of {coverage.pages.length} recorded URLs.
+            </p>
+          )}
+          {coverage.summary.truncated > 0 && (
+            <p className="text-xs text-foreground-muted mt-3">
+              {coverage.summary.truncated} additional URLs omitted from this report.
+            </p>
+          )}
+        </section>
+      )}
 
       {activeVersion && activeVersion.version_number >= 2 && (
         <section className="card p-5 border-accent/20">
@@ -292,8 +453,16 @@ export default function SiteDetailPage() {
       )}
 
       {site.status === "error" && jobs[0]?.error_message && (
-        <div className="card p-6 border-red-500/30">
-          <p className="text-sm text-danger">{jobs[0].error_message}</p>
+        <div className="card p-6 border-red-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <p className="text-sm text-danger break-words">{jobs[0].error_message}</p>
+          <button
+            type="button"
+            onClick={triggerRecheck}
+            disabled={rechecking}
+            className="pill shrink-0 bg-red-500/15 text-red-300 hover:bg-red-500/25 transition-colors px-4 py-2 text-sm disabled:opacity-50 cursor-pointer"
+          >
+            {rechecking ? "Queuing…" : "Retry failed crawl"}
+          </button>
         </div>
       )}
 

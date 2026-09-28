@@ -23,7 +23,9 @@ const ENDPOINTS = [
   ["GET", "/sites", "List company sites and crawl status."],
   ["POST", "/sites", 'Start a crawl. JSON body: {"url":"https://example.com"}'],
   ["GET", "/sites/{site_id}", "Get site details and crawl activity."],
+  ["PATCH", "/sites/{site_id}/settings", "Update page cap, subdomain scope, and URL patterns."],
   ["DELETE", "/sites/{site_id}", "Delete a site and its generated data."],
+  ["GET", "/sites/{site_id}/coverage", "Get the latest crawl coverage summary and URL outcomes."],
   ["GET", "/sites/{site_id}/jobs", "List recent crawl jobs."],
   ["POST", "/sites/{site_id}/recheck", "Queue a recheck."],
   ["GET", "/sites/{site_id}/versions", "List generated llms.txt versions."],
@@ -34,8 +36,19 @@ const ENDPOINTS = [
   ["GET", "/sites/{site_id}/merkle-tree", "Get the Merkle tree and latest changed paths."],
   ["GET", "/analytics/leaderboard", "Get the company generation leaderboard."],
   ["GET", "/analytics/topics", "Get aggregated topic insights."],
+  ["GET", "/analytics/topics/trends?days=90", "Get historical topic mention counts."],
+  ["GET", "/analytics/topics/{topic}/pages", "Get sites and pages contributing to a topic."],
+  ["GET", "/analytics/report?format=json", "Download a JSON company site health report; supports csv."],
   ["GET", "/analytics/cost", "Get LLM usage and cost summaries."],
   ["POST", "/analytics/search", 'Ask across company sites. JSON body: {"query":"pricing"}'],
+  ["GET", "/team/members", "List workspace members and roles (admin session required)."],
+  ["PATCH", "/team/members/{profile_id}", 'Update a member role. JSON body: {"role":"member"} (admin session required).'],
+  ["POST", "/team/invitations", 'Invite an email as an admin or member. JSON body: {"email":"person@example.com","role":"member"} (admin session required).'],
+  ["GET", "/team/invitations", "List active workspace invitations (admin session required)."],
+  ["DELETE", "/team/invitations/{invitation_id}", "Revoke a pending invitation (admin session required)."],
+  ["GET", "/team/invitations/preview?token=…", "Validate an invitation link (public; token is required)."],
+  ["POST", "/team/invitations/accept", 'Accept an invitation. JSON body: {"token":"…"} (Supabase session required).'],
+  ["GET", "/team/audit-events", "List recent workspace audit events (admin session required)."],
   ["GET", "/auth/me", "Get the authenticated account and company workspace."],
   ["GET", "/quotes/random", "Get a rotating homepage quote (does not require authentication)."],
 ] as const;
@@ -119,6 +132,10 @@ export default function ApiAccessPage() {
         <p className="text-foreground-muted text-sm">
           Create company-wide keys for integrations and explore the REST API.
         </p>
+        <p className="text-xs text-foreground-muted mt-2">
+          API keys access company site and analytics operations. Managing keys, member roles, and audit
+          history requires an admin&rsquo;s signed-in session.
+        </p>
       </header>
 
       <section className="card p-5 sm:p-6">
@@ -127,8 +144,8 @@ export default function ApiAccessPage() {
           <h2 className="font-medium">API keys</h2>
         </div>
         <p className="text-sm text-foreground-muted mb-4">
-          Any signed-in company member can manage keys. Each key grants access to all company
-          sites and analytics. Keys are shown only once; store them securely.
+          Company admins can manage keys. Each key grants access to all company sites and
+          analytics. Keys are shown only once; store them securely.
         </p>
         <form onSubmit={createKey} className="flex flex-col sm:flex-row gap-2 mb-5">
           <input

@@ -4,14 +4,12 @@ Merkle tree, and llms.txt generator together."""
 from __future__ import annotations
 
 import asyncio
-import re
-from collections import Counter
 from datetime import datetime, timezone
 from typing import Callable
 
 from sqlalchemy.orm import Session
 
-from app.models.analytics import Topic
+from app.models.analytics import Topic, TopicSnapshot
 from app.models.company import Profile
 from app.models.jobs import CrawlJob
 from app.models.site import LlmsTxtVersion, Page, Site
@@ -21,11 +19,7 @@ from app.services.crawler import Crawler
 from app.services.email_client import send_first_crawl_congrats_email
 from app.services.llm_client import embed_texts
 from app.services.merkle import MerkleTree
-
-_STOPWORDS = {
-    "the", "and", "for", "with", "your", "our", "you", "are", "from", "this", "that",
-    "how", "what", "why", "into", "about", "get", "learn", "more", "home", "page",
-}
+from app.services.topic_insights import extract_topics
 
 
 def run_crawl_job(
@@ -36,9 +30,15 @@ def run_crawl_job(
 ) -> None:
     on_usage = make_usage_logger(db, company_id=site.company_id, site_id=site.id, crawl_job_id=job.id)
 
-    pages = asyncio.run(
-        Crawler(site.root_url).crawl(on_progress=on_progress, started_at=job.started_at)
+    crawler = Crawler(
+        site.root_url,
+        max_pages=site.max_pages,
+        allow_subdomains=site.allow_subdomains,
+        include_patterns=site.include_patterns,
+        exclude_patterns=site.exclude_patterns,
     )
+    pages = asyncio.run(crawler.crawl(on_progress=on_progress, started_at=job.started_at))
+    job.coverage = crawler.coverage
     job.pages_discovered = len(pages)
     if not pages:
         job.status = "error"
@@ -57,6 +57,7 @@ def run_crawl_job(
 
     unchanged_recheck = job.job_type == "recheck" and old_tree is not None and old_tree.root_hash == new_tree.root_hash
     if unchanged_recheck:
+        _snapshot_current_topics(db, site)
         job.status = "done"
         job.pages_crawled = len(pages)
         job.pages_changed = 0
@@ -142,15 +143,32 @@ def _upsert_pages(db, site, pages, existing_pages, changed_paths, on_usage) -> N
 
 
 def _refresh_topics(db: Session, site: Site, pages) -> None:
-    """Cheap, LLM-free topic extraction: frequency of meaningful words across page titles.
+    """Cheap, LLM-free topic extraction: salient terms from page titles and descriptions.
     Powers the cross-company "topics frequently mentioned" analytics view."""
-    words = Counter()
-    for page in pages:
-        for word in re.findall(r"[a-zA-Z]{4,}", f"{page.title} {page.description or ''}"):
-            lower = word.lower()
-            if lower not in _STOPWORDS:
-                words[lower] += 1
-
     db.query(Topic).filter(Topic.site_id == site.id).delete()
-    for name, count in words.most_common(25):
+    captured_at = datetime.now(timezone.utc)
+    for name, count in extract_topics(pages):
         db.add(Topic(company_id=site.company_id, site_id=site.id, name=name, mention_count=count))
+        db.add(
+            TopicSnapshot(
+                company_id=site.company_id,
+                site_id=site.id,
+                name=name,
+                mention_count=count,
+                captured_at=captured_at,
+            )
+        )
+
+
+def _snapshot_current_topics(db: Session, site: Site) -> None:
+    captured_at = datetime.now(timezone.utc)
+    for topic in db.query(Topic).filter(Topic.site_id == site.id).all():
+        db.add(
+            TopicSnapshot(
+                company_id=site.company_id,
+                site_id=site.id,
+                name=topic.name,
+                mention_count=topic.mention_count,
+                captured_at=captured_at,
+            )
+        )

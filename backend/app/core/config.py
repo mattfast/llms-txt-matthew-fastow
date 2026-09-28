@@ -30,7 +30,7 @@ class Settings(BaseSettings):
 
     # --- Resend (transactional emails: welcome, first-crawl congrats) ---
     resend_api_key: str = ""
-    email_from: str = "llms.txt by Profound <onboarding@resend.dev>"
+    email_from: str = "llms.txt by Profound <noreply@llms-txt-profound.com>"
 
     # --- Crawler ---
     max_pages_per_site: int = 500

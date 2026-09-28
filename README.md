@@ -27,13 +27,19 @@ for [Profound](https://www.tryprofound.com/).
    is kept per site.
 4. **See company-wide analytics:**
    - **Leaderboard** — who on your team has generated the most `llms.txt` files.
-   - **Topic insights** — frequently-mentioned terms across everything your company has
-     crawled.
+   - **Topic insights** — frequently-mentioned terms, trends over time, and the pages
+     where each topic appears across everything your company has crawled.
    - **Ask your sites** — natural-language / semantic search (pgvector embeddings) across
      every generated `llms.txt`, so you can ask things like "which of our sites mention
      pricing?"
    - **Cost tracker** — running total (and breakdown by day/purpose) of LLM token spend
      for crawling, summarizing, and embedding.
+   - **Crawl controls and coverage** — configure page limits, subdomain scope, and URL
+     patterns per site, then inspect crawled, skipped, and failed URLs.
+   - **Workspace administration** — assign admin/member roles and review an audit log
+     of administrative actions.
+   - **Downloadable reports** — export site health, crawl coverage, settings, and topic
+     insights as CSV or JSON.
 
 ## Feature highlights beyond the base spec
 
@@ -151,6 +157,9 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 playwright install chromium   # for JS-rendered page crawling
 cp .env.example .env          # then fill in SUPABASE_* and (optionally) OPENAI_API_KEY
+# Set RESEND_API_KEY to your Resend API key to enable email delivery. The configured
+# sender, EMAIL_FROM, defaults to llms.txt by Profound <noreply@llms-txt-profound.com>;
+# this address must belong to a domain verified in the Resend account for that API key.
 python -c "import app.models; from app.core.db import Base, engine; Base.metadata.create_all(bind=engine)"
 uvicorn app.main:app --reload --port 8000
 ```
@@ -158,7 +167,19 @@ uvicorn app.main:app --reload --port 8000
 For an existing database, apply any additive SQL migrations in `backend/migrations/`
 before starting a backend version that depends on those columns. For example, crawl
 activity progress adds `sites.crawl_activity` via `001_crawl_activity.sql`; API key
-authentication adds the `api_keys` table via `002_api_keys.sql`.
+authentication adds the `api_keys` table via `002_api_keys.sql`; crawl settings,
+coverage, topic history, workspace roles, and audit events use `003_insights_controls_team.sql`.
+That migration promotes the earliest existing profile in each company to admin and leaves
+other existing profiles as members; the first profile in a newly-created workspace is
+also assigned admin. Team invitations use `004_team_invitations.sql`; invitation links expire
+after 24 hours and can be revoked by an admin. Downloadable CSV/JSON reports are available
+from the Sites and Topic Insights pages.
+
+Set `NEXT_PUBLIC_APP_URL` in `frontend/.env.local` to `http://localhost:3000` for local
+development and to the deployed frontend origin in production. Add each corresponding
+callback (for example, `http://localhost:3000/**` and `https://llms-txt-profound.com/**`)
+to Supabase Authentication URL Configuration → Redirect URLs; Supabase falls back to its
+Site URL when a requested email callback is not allow-listed.
 
 In a second terminal, run the background worker that processes crawl jobs:
 

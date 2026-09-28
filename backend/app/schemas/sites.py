@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl
 
 
 class CrawlActivityOut(BaseModel):
@@ -8,10 +8,22 @@ class CrawlActivityOut(BaseModel):
     current_url: str | None
     recently_crawled: list[str]
     recently_discovered: list[str]
+    coverage: dict[str, int] | None = None
 
 
 class SiteCreateRequest(BaseModel):
     url: HttpUrl
+    max_pages: int = Field(default=500, ge=1, le=5000)
+    allow_subdomains: bool = True
+    include_patterns: list[str] = Field(default_factory=list, max_length=50)
+    exclude_patterns: list[str] = Field(default_factory=list, max_length=50)
+
+
+class SiteSettingsUpdateRequest(BaseModel):
+    max_pages: int = Field(ge=1, le=5000)
+    allow_subdomains: bool
+    include_patterns: list[str] = Field(max_length=50)
+    exclude_patterns: list[str] = Field(max_length=50)
 
 
 class SiteOut(BaseModel):
@@ -19,6 +31,10 @@ class SiteOut(BaseModel):
     root_url: str
     domain: str
     status: str
+    max_pages: int
+    allow_subdomains: bool
+    include_patterns: list[str]
+    exclude_patterns: list[str]
     pages_discovered: int
     pages_crawled: int
     crawl_activity: CrawlActivityOut | None = None
@@ -36,6 +52,7 @@ class CrawlJobOut(BaseModel):
     pages_crawled: int
     pages_changed: int
     error_message: str | None
+    coverage: dict | None = None
     started_at: datetime
     finished_at: datetime | None
 

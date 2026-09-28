@@ -3,6 +3,7 @@ extracts clean metadata/content for llms.txt generation."""
 from __future__ import annotations
 
 import asyncio
+import fnmatch
 import logging
 import re
 import urllib.robotparser as robotparser
@@ -45,7 +46,14 @@ class CrawledPage:
 
 
 class Crawler:
-    def __init__(self, root_url: str, max_pages: int | None = None):
+    def __init__(
+        self,
+        root_url: str,
+        max_pages: int | None = None,
+        allow_subdomains: bool = True,
+        include_patterns: list[str] | None = None,
+        exclude_patterns: list[str] | None = None,
+    ):
         candidate = root_url if "://" in root_url else f"https://{root_url}"
         canonical = self._canonicalize_url(candidate, candidate)
         if not canonical:
@@ -56,8 +64,14 @@ class Crawler:
         extracted = _domain_extractor(self.root_hostname)
         self.site_domain = ".".join(part for part in (extracted.domain, extracted.suffix) if part)
         self.max_pages = max_pages if max_pages is not None else settings.max_pages_per_site
+        self.allow_subdomains = allow_subdomains
+        self.include_patterns = [pattern.strip() for pattern in (include_patterns or []) if pattern.strip()]
+        self.exclude_patterns = [pattern.strip() for pattern in (exclude_patterns or []) if pattern.strip()]
         self._robots = robotparser.RobotFileParser()
         self._visited: set[str] = set()
+        self._coverage_records: dict[str, dict[str, str | None]] = {}
+        self._coverage_truncated = 0
+        self.coverage: dict[str, object] = {"summary": {}, "pages": []}
 
     async def _load_robots(self, client: httpx.AsyncClient) -> None:
         try:
@@ -70,7 +84,62 @@ class Crawler:
             self._robots.parse([])
 
     def _allowed(self, url: str) -> bool:
-        return self._robots.can_fetch(settings.user_agent, url)
+        return self._scope_reason(url) is None
+
+    def _scope_reason(self, url: str) -> str | None:
+        hostname = (urlsplit(url).hostname or "").lower().rstrip(".")
+        if hostname != self.root_hostname:
+            if not self.allow_subdomains or not self._same_domain(url):
+                return "Outside the selected hostname scope"
+        if self._is_skippable(url):
+            return "Unsupported file type"
+
+        parsed = urlsplit(url)
+        path = f"{parsed.path or '/'}{f'?{parsed.query}' if parsed.query else ''}"
+        if any(fnmatch.fnmatchcase(path, pattern) or fnmatch.fnmatchcase(url, pattern)
+               for pattern in self.exclude_patterns):
+            return "Excluded by URL pattern"
+        is_root_page = hostname == self.root_hostname and parsed.path in {"", "/"} and not parsed.query
+        if self.include_patterns and not is_root_page and not self._matches_include(url):
+            return "Does not match an include URL pattern"
+        if not self._robots.can_fetch(settings.user_agent, url):
+            return "Disallowed by robots.txt"
+        return None
+
+    def _matches_include(self, url: str) -> bool:
+        parsed = urlsplit(url)
+        path = f"{parsed.path or '/'}{f'?{parsed.query}' if parsed.query else ''}"
+        return any(
+            fnmatch.fnmatchcase(path, pattern) or fnmatch.fnmatchcase(url, pattern)
+            for pattern in self.include_patterns
+        )
+
+    def _record_coverage(self, url: str, state: str, reason: str | None = None) -> None:
+        record = self._coverage_records.get(url)
+        if record is not None:
+            record["status"] = state
+            record["reason"] = reason
+            return
+        if len(self._coverage_records) >= 5000:
+            self._coverage_truncated += 1
+            return
+        self._coverage_records[url] = {"url": url, "status": state, "reason": reason}
+
+    def _coverage_snapshot(self) -> dict[str, object]:
+        counts = {state: 0 for state in ("crawled", "skipped", "failed", "pending")}
+        for record in self._coverage_records.values():
+            state = "pending" if record["status"] == "discovered" else str(record["status"])
+            if state in counts:
+                counts[state] += 1
+        return {
+            "summary": {
+                "discovered": len(self._coverage_records) + self._coverage_truncated,
+                **counts,
+                "truncated": self._coverage_truncated,
+                "recorded": len(self._coverage_records),
+            },
+            "pages": list(self._coverage_records.values()),
+        }
 
     async def _discover_from_sitemap(self, client: httpx.AsyncClient) -> list[str]:
         """Read robots.txt sitemap declarations and recursively traverse sitemap indexes."""
@@ -93,7 +162,8 @@ class Crawler:
                 not sitemap_url
                 or sitemap_url in seen_sitemaps
                 or not self._same_domain(sitemap_url)
-                or not self._allowed(sitemap_url)
+                or (not self.allow_subdomains and urlsplit(sitemap_url).hostname != self.root_hostname)
+                or not self._robots.can_fetch(settings.user_agent, sitemap_url)
             ):
                 continue
             seen_sitemaps.add(sitemap_url)
@@ -185,13 +255,14 @@ class Crawler:
             if "nofollow" in {value.lower() for value in rel}:
                 continue
             canonical = self._canonicalize_url(anchor["href"], page_url)
-            if (
-                canonical
-                and self._same_domain(canonical)
-                and not self._is_skippable(canonical)
-                and self._allowed(canonical)
-            ):
-                links.append(canonical)
+            if not canonical:
+                continue
+            reason = self._scope_reason(canonical)
+            if reason:
+                if reason != "Outside the selected hostname scope":
+                    self._record_coverage(canonical, "skipped", reason)
+                continue
+            links.append(canonical)
         return list(dict.fromkeys(links))
 
     async def crawl(
@@ -212,14 +283,15 @@ class Crawler:
             queued: set[str] = set()
             for raw_url in seed_urls:
                 canonical = self._canonicalize_url(raw_url, self.root_url)
-                if (
-                    canonical
-                    and canonical not in queued
-                    and self._same_domain(canonical)
-                    and not self._is_skippable(canonical)
-                ):
+                if not canonical:
+                    continue
+                reason = self._scope_reason(canonical)
+                if reason:
+                    self._record_coverage(canonical, "skipped", reason)
+                elif canonical not in queued:
                     frontier.append(canonical)
                     queued.add(canonical)
+                    self._record_coverage(canonical, "discovered")
 
             concurrency = max(1, settings.crawl_concurrency)
             semaphore = asyncio.Semaphore(concurrency)
@@ -242,6 +314,7 @@ class Crawler:
                             "current_url": current_url,
                             "recently_crawled": recently_crawled[-8:],
                             "recently_discovered": recently_discovered[-8:],
+                            "coverage": self._coverage_snapshot()["summary"],
                         },
                     )
 
@@ -265,7 +338,11 @@ class Crawler:
                         and attempted + len(batch) < self.max_pages
                     ):
                         url = frontier.popleft()
-                        if url in self._visited or not self._allowed(url):
+                        if url in self._visited:
+                            continue
+                        reason = self._scope_reason(url)
+                        if reason:
+                            self._record_coverage(url, "skipped", reason)
                             continue
                         self._visited.add(url)
                         batch.append(url)
@@ -280,15 +357,19 @@ class Crawler:
                     completed_urls: list[str] = []
 
                     for requested_url, resp in responses:
-                        if (
-                            resp is None
-                            or resp.status_code != 200
-                            or "text/html" not in resp.headers.get("content-type", "")
-                        ):
+                        if resp is None:
+                            self._record_coverage(requested_url, "failed", "Request failed")
+                            continue
+                        if resp.status_code != 200:
+                            self._record_coverage(requested_url, "failed", f"HTTP {resp.status_code}")
+                            continue
+                        if "text/html" not in resp.headers.get("content-type", ""):
+                            self._record_coverage(requested_url, "skipped", "Response is not HTML")
                             continue
 
                         page_url = self._canonicalize_url(str(resp.url), requested_url)
                         if not page_url or not self._same_domain(page_url):
+                            self._record_coverage(requested_url, "skipped", "Redirected outside the selected site")
                             continue
 
                         completed_urls.append(page_url)
@@ -334,7 +415,11 @@ class Crawler:
                                 browser_unavailable = browser is None
                                 logger.warning("JavaScript rendering failed for %s", page_url, exc_info=True)
 
-                        pages_by_path[page.path] = page
+                        if self.include_patterns and not self._matches_include(page_url):
+                            self._record_coverage(page_url, "skipped", "Used only to discover included pages")
+                        else:
+                            pages_by_path[page.path] = page
+                            self._record_coverage(page_url, "crawled")
                         discovered_links.extend(page_links)
 
                     if self.root_url in batch:
@@ -345,7 +430,10 @@ class Crawler:
                         if link not in queued and link not in self._visited and len(queued) < self.max_pages * 20:
                             queued.add(link)
                             frontier.append(link)
+                            self._record_coverage(link, "discovered")
                             newly_discovered.append(link)
+                        elif link not in queued and link not in self._visited:
+                            self._record_coverage(link, "skipped", "Discovery limit reached")
 
                     recently_crawled = (recently_crawled + completed_urls)[-8:]
                     recently_discovered = (recently_discovered + newly_discovered)[-8:]
@@ -358,6 +446,8 @@ class Crawler:
                         self.root_url,
                         len(frontier),
                     )
+                    while frontier:
+                        self._record_coverage(frontier.popleft(), "skipped", "Page limit reached")
             finally:
                 if browser is not None:
                     await browser.close()
@@ -365,6 +455,7 @@ class Crawler:
                     await playwright.stop()
 
             results = list(pages_by_path.values())
+            self.coverage = self._coverage_snapshot()
             return results
 
 

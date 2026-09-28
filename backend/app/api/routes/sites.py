@@ -16,8 +16,10 @@ from app.schemas.sites import (
     LlmsTxtVersionSummaryOut,
     SiteCreateRequest,
     SiteOut,
+    SiteSettingsUpdateRequest,
 )
 from app.services.merkle import MerkleTree
+from app.services.audit import record_audit_event
 from app.workers.queue import get_queue
 from app.workers.tasks import crawl_site_job
 
@@ -54,8 +56,22 @@ def create_site(
         root_url=str(body.url),
         domain=domain,
         status="pending",
+        max_pages=body.max_pages,
+        allow_subdomains=body.allow_subdomains,
+        include_patterns=body.include_patterns,
+        exclude_patterns=body.exclude_patterns,
     )
     db.add(site)
+    db.flush()
+    record_audit_event(
+        db,
+        company_id=site.company_id,
+        actor_id=user.id,
+        action="site.created",
+        resource_type="site",
+        resource_id=site.id,
+        details={"domain": site.domain},
+    )
     db.commit()
     db.refresh(site)
 
@@ -70,6 +86,69 @@ def create_site(
     )
 
     return site
+
+
+@router.patch("/{site_id}/settings", response_model=SiteOut)
+def update_site_settings(
+    site_id: str,
+    body: SiteSettingsUpdateRequest,
+    db: Session = Depends(get_db),
+    user: CurrentUser = Depends(get_current_user),
+):
+    site = _get_owned_site(db, site_id, user)
+    if site.status in {"pending", "crawling"}:
+        raise HTTPException(status_code=409, detail="Crawl settings cannot change during a crawl")
+
+    patterns = [pattern.strip() for pattern in body.include_patterns + body.exclude_patterns]
+    if any(not pattern or len(pattern) > 300 for pattern in patterns):
+        raise HTTPException(status_code=422, detail="URL patterns must be 1-300 characters")
+
+    old_settings = {
+        "max_pages": site.max_pages,
+        "allow_subdomains": site.allow_subdomains,
+        "include_patterns": site.include_patterns,
+        "exclude_patterns": site.exclude_patterns,
+    }
+    site.max_pages = body.max_pages
+    site.allow_subdomains = body.allow_subdomains
+    site.include_patterns = [p.strip() for p in body.include_patterns]
+    site.exclude_patterns = [p.strip() for p in body.exclude_patterns]
+    record_audit_event(
+        db,
+        company_id=site.company_id,
+        actor_id=user.id,
+        action="site.settings_updated",
+        resource_type="site",
+        resource_id=site.id,
+        details={"before": old_settings, "after": {
+            "max_pages": site.max_pages,
+            "allow_subdomains": site.allow_subdomains,
+            "include_patterns": site.include_patterns,
+            "exclude_patterns": site.exclude_patterns,
+        }},
+    )
+    db.commit()
+    db.refresh(site)
+    return site
+
+
+@router.get("/{site_id}/coverage")
+def get_site_coverage(
+    site_id: str,
+    db: Session = Depends(get_db),
+    user: CurrentUser = Depends(get_current_user),
+):
+    _get_owned_site(db, site_id, user)
+    latest_job = (
+        db.query(CrawlJob)
+        .filter(CrawlJob.site_id == site_id, CrawlJob.status == "done")
+        .order_by(CrawlJob.finished_at.desc())
+        .first()
+    )
+    return latest_job.coverage if latest_job and latest_job.coverage else {
+        "summary": {"discovered": 0, "crawled": 0, "skipped": 0, "failed": 0, "truncated": 0, "recorded": 0},
+        "pages": [],
+    }
 
 
 @router.get("", response_model=list[SiteOut])
@@ -118,6 +197,15 @@ def delete_site(
     )
     db.query(Topic).filter(Topic.site_id == site_id).delete(synchronize_session=False)
     db.query(CrawlJob).filter(CrawlJob.site_id == site_id).delete(synchronize_session=False)
+    record_audit_event(
+        db,
+        company_id=site.company_id,
+        actor_id=user.id,
+        action="site.deleted",
+        resource_type="site",
+        resource_id=site.id,
+        details={"domain": site.domain},
+    )
     db.delete(site)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -138,8 +226,18 @@ def list_jobs(site_id: str, db: Session = Depends(get_db), user: CurrentUser = D
 @router.post("/{site_id}/recheck", response_model=CrawlJobOut, status_code=status.HTTP_202_ACCEPTED)
 def trigger_recheck(site_id: str, db: Session = Depends(get_db), user: CurrentUser = Depends(get_current_user)):
     site = _get_owned_site(db, site_id, user)
+    if site.status in {"pending", "crawling"}:
+        raise HTTPException(status_code=409, detail="A crawl is already in progress")
     job = CrawlJob(site_id=site.id, job_type="recheck")
     db.add(job)
+    record_audit_event(
+        db,
+        company_id=site.company_id,
+        actor_id=user.id,
+        action="site.recheck_queued",
+        resource_type="site",
+        resource_id=site.id,
+    )
     db.commit()
     db.refresh(job)
     get_queue().enqueue(

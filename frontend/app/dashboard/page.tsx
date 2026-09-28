@@ -10,6 +10,7 @@ import { apiFetch, ApiError } from "@/lib/api";
 import { normalizeUrl } from "@/lib/url";
 import type { Site } from "@/lib/types";
 import { CrawlProgress } from "@/components/CrawlProgress";
+import { ReportDownloadButtons } from "@/components/ReportDownloadButtons";
 
 const STATUS_STYLES: Record<Site["status"], string> = {
   pending: "bg-yellow-500/15 text-yellow-400",
@@ -45,6 +46,7 @@ function SitesContent() {
   const [sites, setSites] = useState<Site[] | null>(null);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [siteLoadError, setSiteLoadError] = useState<string | null>(null);
   const [manualUrl, setManualUrl] = useState("");
   const [query, setQuery] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("created_at");
@@ -52,13 +54,21 @@ function SitesContent() {
   const [deleteTarget, setDeleteTarget] = useState<Site | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const siteLoadRequestRef = useRef(0);
 
   const loadSites = useCallback(async () => {
+    const requestId = ++siteLoadRequestRef.current;
     try {
-      const data = await apiFetch<Site[]>("/sites");
+      const data = await apiFetch<Site[]>("/sites", { cache: "no-store" });
+      if (requestId !== siteLoadRequestRef.current) return;
       setSites(data);
+      setSiteLoadError(null);
     } catch (err) {
-      if (err instanceof ApiError) setError(err.message);
+      if (requestId === siteLoadRequestRef.current) {
+        setSiteLoadError(
+          err instanceof ApiError ? err.message : "Couldn't refresh the site list. Please try again."
+        );
+      }
     }
   }, []);
 
@@ -164,13 +174,14 @@ function SitesContent() {
 
   return (
     <div className="p-4 sm:p-8 max-w-6xl mx-auto w-full">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Your sites</h1>
           <p className="text-foreground-muted text-sm mt-1">
             Monitored sites with an auto-generated, auto-updated llms.txt.
           </p>
         </div>
+        <ReportDownloadButtons />
       </div>
 
       <form
@@ -239,11 +250,13 @@ function SitesContent() {
         </div>
       </div>
 
-      {error && <p className="text-danger text-sm mb-4">{error}</p>}
+      {(error || siteLoadError) && (
+        <p className="text-danger text-sm mb-4">{error || siteLoadError}</p>
+      )}
 
       <AnimatePresence>
         {visibleSites === null ? (
-          error ? null : <p className="text-foreground-muted text-sm">Loading…</p>
+          error || siteLoadError ? null : <p className="text-foreground-muted text-sm">Loading…</p>
         ) : visibleSites.length === 0 ? (
           <p className="text-foreground-muted text-sm">
             {sites && sites.length > 0

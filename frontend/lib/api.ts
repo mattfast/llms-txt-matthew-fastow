@@ -38,7 +38,17 @@ export async function apiFetch<T>(
   }
   if (!res.ok) {
     const body = await res.text();
-    throw new ApiError(body || res.statusText, res.status);
+    let message = body || res.statusText;
+    try {
+      const payload: unknown = JSON.parse(body);
+      if (payload && typeof payload === "object" && "detail" in payload) {
+        const detail = payload.detail;
+        if (typeof detail === "string") message = detail;
+      }
+    } catch {
+      // Non-JSON error bodies are preserved verbatim.
+    }
+    throw new ApiError(message, res.status);
   }
   const contentType = res.headers.get("content-type") ?? "";
   if (contentType.includes("application/json")) {

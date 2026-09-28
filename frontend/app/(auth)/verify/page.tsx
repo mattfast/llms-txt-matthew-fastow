@@ -11,6 +11,7 @@ function VerifyContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const next = searchParams.get("next");
+  const inviteToken = searchParams.get("invite");
   const [status, setStatus] = useState<"checking" | "onboarding" | "error">("checking");
   const [message, setMessage] = useState("Confirming your email…");
 
@@ -37,16 +38,34 @@ function VerifyContent() {
 
       if (cancelled) return;
       setStatus("onboarding");
-      setMessage("Setting up your company workspace…");
+      setMessage(inviteToken ? "Joining your invited workspace…" : "Setting up your company workspace…");
 
       try {
+        if (inviteToken) {
+          await apiFetch("/team/invitations/accept", {
+            method: "POST",
+            body: JSON.stringify({ token: inviteToken }),
+            signal: AbortSignal.timeout(20_000),
+          });
+          if (!cancelled) router.push("/dashboard");
+          return;
+        }
+
         const me = await apiFetch<MeResponse>("/auth/me");
         if (!me.onboarded) {
           await apiFetch("/auth/onboard", {
             method: "POST",
+            signal: AbortSignal.timeout(20_000),
           });
         }
       } catch {
+        if (inviteToken) {
+          if (!cancelled) {
+            setStatus("error");
+            setMessage("We couldn't accept this invitation. It may have expired or been revoked.");
+          }
+          return;
+        }
         // Non-fatal: dashboard will retry onboarding if needed.
       }
 
@@ -59,7 +78,7 @@ function VerifyContent() {
     return () => {
       cancelled = true;
     };
-  }, [router, next]);
+  }, [router, next, inviteToken]);
 
   return (
     <AuthShell title="Verifying" subtitle="Just a moment">

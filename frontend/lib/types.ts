@@ -7,6 +7,7 @@ export interface CrawlActivity {
   current_url: string | null;
   recently_crawled: string[];
   recently_discovered: string[];
+  coverage?: Record<string, number> | null;
 }
 
 export interface Site {
@@ -14,6 +15,10 @@ export interface Site {
   root_url: string;
   domain: string;
   status: SiteStatus;
+  max_pages: number;
+  allow_subdomains: boolean;
+  include_patterns: string[];
+  exclude_patterns: string[];
   pages_discovered: number;
   pages_crawled: number;
   crawl_activity: CrawlActivity | null;
@@ -29,8 +34,22 @@ export interface CrawlJob {
   pages_crawled: number;
   pages_changed: number;
   error_message: string | null;
+  coverage: CrawlCoverage | null;
   started_at: string;
   finished_at: string | null;
+}
+
+export interface CrawlCoverage {
+  summary: {
+    discovered: number;
+    crawled: number;
+    skipped: number;
+    failed: number;
+    pending?: number;
+    truncated: number;
+    recorded: number;
+  };
+  pages: { url: string; status: "discovered" | "crawled" | "skipped" | "failed"; reason: string | null }[];
 }
 
 export interface LlmsTxtVersion {
@@ -79,6 +98,12 @@ export interface TopicEntry {
   sites: number;
 }
 
+export interface TopicTrendPoint {
+  topic: string;
+  day: string;
+  mentions: number;
+}
+
 export interface CostSummary {
   total_usd: number;
   by_day: { day: string; cost_usd: number }[];
@@ -103,4 +128,5 @@ export interface MeResponse {
   onboarded: boolean;
   company_id?: string;
   company_name?: string;
+  role?: "admin" | "member";
 }

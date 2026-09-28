@@ -8,7 +8,8 @@ import random
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from openai import OpenAI
+import tiktoken
+from openai import BadRequestError, OpenAI
 
 from app.core.config import get_settings
 
@@ -19,6 +20,9 @@ settings = get_settings()
 UsageCallback = Callable[[str, str, int, int], None] | None
 
 _client: OpenAI | None = None
+MAX_EMBEDDING_INPUT_TOKENS = 8_000
+MAX_EMBEDDING_BATCH_TOKENS = 100_000
+MAX_EMBEDDING_BATCH_ITEMS = 2_000
 
 
 def _get_client() -> OpenAI | None:
@@ -131,8 +135,54 @@ def embed_texts(texts: list[str], on_usage: UsageCallback = None) -> list[list[f
     client = _get_client()
     if client is None or not texts:
         return [[] for _ in texts]
-    response = client.embeddings.create(model=settings.openai_embedding_model, input=texts)
-    if on_usage:
-        total_tokens = response.usage.total_tokens if response.usage else 0
-        on_usage("embed", settings.openai_embedding_model, total_tokens, 0)
-    return [item.embedding for item in response.data]
+
+    try:
+        encoding = tiktoken.encoding_for_model(settings.openai_embedding_model)
+    except KeyError:
+        encoding = tiktoken.get_encoding("cl100k_base")
+
+    batches: list[list[str]] = []
+    batch: list[str] = []
+    batch_tokens = 0
+    for text in texts:
+        tokens = encoding.encode(text or " ")
+        if len(tokens) > MAX_EMBEDDING_INPUT_TOKENS:
+            tokens = tokens[:MAX_EMBEDDING_INPUT_TOKENS]
+        normalized_text = encoding.decode(tokens)
+        token_count = len(tokens)
+
+        if batch and (
+            batch_tokens + token_count > MAX_EMBEDDING_BATCH_TOKENS
+            or len(batch) >= MAX_EMBEDDING_BATCH_ITEMS
+        ):
+            batches.append(batch)
+            batch = []
+            batch_tokens = 0
+        batch.append(normalized_text)
+        batch_tokens += token_count
+    if batch:
+        batches.append(batch)
+
+    embeddings: list[list[float]] = []
+    for batch in batches:
+        embeddings.extend(_create_embedding_batch(client, batch, on_usage))
+    return embeddings
+
+
+def _create_embedding_batch(client, batch: list[str], on_usage: UsageCallback) -> list[list[float]]:
+    try:
+        response = client.embeddings.create(
+            model=settings.openai_embedding_model,
+            input=batch,
+        )
+    except BadRequestError as exc:
+        if exc.code != "max_tokens_per_request" or len(batch) == 1:
+            raise
+        midpoint = len(batch) // 2
+        return _create_embedding_batch(client, batch[:midpoint], on_usage) + _create_embedding_batch(
+            client, batch[midpoint:], on_usage
+        )
+
+    if on_usage and response.usage:
+        on_usage("embed", settings.openai_embedding_model, response.usage.total_tokens, 0)
+    return [item.embedding for item in sorted(response.data, key=lambda item: item.index)]

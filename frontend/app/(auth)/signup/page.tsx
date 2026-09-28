@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { AuthShell } from "@/components/AuthShell";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
+import { getAuthRedirectUrl } from "@/lib/auth-redirect";
 
 function SignupForm() {
   const searchParams = useSearchParams();
@@ -22,7 +23,7 @@ function SignupForm() {
     setSubmitting(true);
 
     const supabase = getSupabaseBrowserClient();
-    const redirectTo = `${window.location.origin}/verify${
+    const redirectTo = `${getAuthRedirectUrl("/verify")}${
       next ? `?next=${encodeURIComponent(next)}` : ""
     }`;
 

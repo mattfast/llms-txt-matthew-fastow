@@ -32,25 +32,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const supabase = getSupabaseBrowserClient();
-
-    supabase.auth.getSession().then(async (result: { data: { session: Session | null } }) => {
-      setSession(result.data.session);
-      if (result.data.session) await refreshMe();
-      setLoading(false);
-    });
+    let mounted = true;
+    let profileRefreshTimer: number | undefined;
 
     const { data: listener } = supabase.auth.onAuthStateChange(
-      async (_event: AuthChangeEvent, newSession: Session | null) => {
+      (event: AuthChangeEvent, newSession: Session | null) => {
+        if (event === "INITIAL_SESSION") return;
         setSession(newSession);
-        if (newSession) {
-          await refreshMe();
-        } else {
+        if (!newSession) {
           setMe(null);
+        } else if (event === "SIGNED_IN" || event === "USER_UPDATED") {
+          profileRefreshTimer = window.setTimeout(() => {
+            if (mounted) void refreshMe();
+          }, 0);
         }
       }
     );
 
-    return () => listener.subscription.unsubscribe();
+    void supabase.auth.getSession().then(({ data, error }) => {
+      if (!mounted) return;
+      if (error) {
+        setSession(null);
+        setMe(null);
+      } else {
+        setSession(data.session);
+        if (data.session) void refreshMe();
+      }
+      setLoading(false);
+    });
+
+    return () => {
+      mounted = false;
+      if (profileRefreshTimer !== undefined) window.clearTimeout(profileRefreshTimer);
+      listener.subscription.unsubscribe();
+    };
   }, [refreshMe]);
 
   const signOut = useCallback(async () => {

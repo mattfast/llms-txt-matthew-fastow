@@ -13,19 +13,22 @@ import {
   Search,
   Coins,
   KeyRound,
+  UsersRound,
+  type LucideIcon,
   Menu,
   X,
   LogOut,
 } from "lucide-react";
 import { toast } from "sonner";
 
-const NAV_ITEMS = [
+const NAV_ITEMS: { href: string; label: string; icon: LucideIcon; adminOnly?: boolean }[] = [
   { href: "/dashboard", label: "Sites", icon: Globe2 },
   { href: "/dashboard/leaderboard", label: "Leaderboard", icon: Trophy },
   { href: "/dashboard/analytics", label: "Topic insights", icon: BarChart3 },
   { href: "/dashboard/search", label: "Ask your sites", icon: Search },
   { href: "/dashboard/cost", label: "Cost tracker", icon: Coins },
-  { href: "/dashboard/api", label: "API access", icon: KeyRound },
+  { href: "/dashboard/api", label: "API access", icon: KeyRound, adminOnly: true },
+  { href: "/dashboard/team", label: "Team & audit", icon: UsersRound, adminOnly: true },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -33,14 +36,27 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const router = useRouter();
   const { session, me, loading, refreshMe, signOut } = useAuth();
   const [onboardError, setOnboardError] = useState<string | null>(null);
+  const [onboardingAttempt, setOnboardingAttempt] = useState(0);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const onboardingInFlight = useRef(false);
+  const onboardingRequest = useRef<Promise<void> | null>(null);
+  const loggingOut = useRef(false);
 
   useEffect(() => {
-    if (!loading && !session) {
-      router.push("/login");
+    if (!loading && !session && !loggingOut.current) {
+      router.replace("/login");
     }
   }, [loading, session, router]);
+
+  async function handleLogout() {
+    loggingOut.current = true;
+    try {
+      await signOut();
+      router.replace("/");
+    } catch {
+      loggingOut.current = false;
+      toast.error("Couldn't log out. Please try again.");
+    }
+  }
 
   // Close the mobile drawer whenever the route changes.
   useEffect(() => {
@@ -50,30 +66,33 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   // Self-heal if onboarding did not complete after email verification.
   useEffect(() => {
-    if (!session || !me || me.onboarded || onboardingInFlight.current) return;
+    if (!session || !me || me.onboarded) return;
 
     let cancelled = false;
-    onboardingInFlight.current = true;
+    const request = onboardingRequest.current ??
+      (onboardingRequest.current = apiFetch("/auth/onboard", {
+        method: "POST",
+        signal: AbortSignal.timeout(20_000),
+      }).then(() => undefined));
     async function retryOnboarding() {
       try {
-        await apiFetch("/auth/onboard", {
-          method: "POST",
-        });
+        await request;
         if (!cancelled) await refreshMe();
-      } catch {
+      } catch (error) {
         if (!cancelled) {
-          setOnboardError("We couldn't finish setting up your workspace.");
+          const detail = error instanceof Error ? ` ${error.message}` : "";
+          setOnboardError(`We couldn't finish setting up your workspace.${detail}`);
           toast.error("We couldn't finish setting up your workspace.");
         }
       } finally {
-        onboardingInFlight.current = false;
+        if (onboardingRequest.current === request) onboardingRequest.current = null;
       }
     }
     retryOnboarding();
     return () => {
       cancelled = true;
     };
-  }, [session, me, refreshMe]);
+  }, [session, me, refreshMe, onboardingAttempt]);
 
   if (loading || !session) {
     return (
@@ -95,10 +114,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </p>
           {onboardError && (
             <button
-              onClick={() => window.location.reload()}
+              onClick={() => {
+                setOnboardError(null);
+                setOnboardingAttempt((attempt) => attempt + 1);
+              }}
               className="pill bg-surface-raised hover:bg-surface-hover border border-border-subtle transition-colors px-4 py-1.5 text-xs cursor-pointer"
             >
-              Retry
+              Retry setup
             </button>
           )}
         </div>
@@ -108,7 +130,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const navList = (
     <nav className="flex flex-col gap-1">
-      {NAV_ITEMS.map((item) => {
+      {NAV_ITEMS.filter((item) => !item.adminOnly || me?.role === "admin").map((item) => {
         const active = pathname === item.href;
         const Icon = item.icon;
         return (
@@ -134,7 +156,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <div className="text-xs text-foreground-muted truncate">{me?.company_name}</div>
       <div className="text-xs text-foreground-muted truncate">{me?.email}</div>
       <button
-        onClick={() => signOut().then(() => router.push("/"))}
+        onClick={() => void handleLogout()}
         className="flex items-center gap-1.5 text-left text-xs text-foreground-muted hover:text-foreground transition-colors mt-1 cursor-pointer"
       >
         <LogOut size={13} strokeWidth={1.75} aria-hidden />

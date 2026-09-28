@@ -10,6 +10,7 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const next = searchParams.get("next");
+  const returnTo = searchParams.get("returnTo");
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -29,7 +30,11 @@ function LoginForm() {
       setError(signInError.message);
       return;
     }
-    router.push(next ? `/dashboard?new=${encodeURIComponent(next)}` : "/dashboard");
+    if (returnTo?.startsWith("/") && !returnTo.startsWith("//")) {
+      router.push(returnTo);
+    } else {
+      router.push(next ? `/dashboard?new=${encodeURIComponent(next)}` : "/dashboard");
+    }
   }
 
   return (
@@ -71,6 +76,11 @@ function LoginForm() {
           {submitting ? "Logging in…" : "Log in"}
         </button>
       </form>
+      <p className="text-xs text-foreground-muted mt-4 text-center">
+        <Link href="/" className="hover:text-foreground underline">
+          Back to homepage
+        </Link>
+      </p>
       <p className="text-xs text-foreground-muted mt-5 text-center">
         Don&rsquo;t have an account?{" "}
         <Link href="/signup" className="text-foreground underline">

@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from enum import Enum
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, JSON, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -38,6 +38,10 @@ class Site(Base):
     root_url: Mapped[str] = mapped_column(String(2048))
     domain: Mapped[str] = mapped_column(String(255), index=True)
     status: Mapped[str] = mapped_column(String(32), default=SiteStatus.pending.value)
+    max_pages: Mapped[int] = mapped_column(Integer, default=500)
+    allow_subdomains: Mapped[bool] = mapped_column(Boolean, default=True)
+    include_patterns: Mapped[list] = mapped_column(JSON, default=list)
+    exclude_patterns: Mapped[list] = mapped_column(JSON, default=list)
 
     merkle_root_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     pages_discovered: Mapped[int] = mapped_column(Integer, default=0)
