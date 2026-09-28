@@ -21,7 +21,7 @@ from app.schemas.sites import (
 from app.services.merkle import MerkleTree
 from app.services.audit import record_audit_event
 from app.workers.queue import get_queue
-from app.workers.tasks import crawl_site_job
+from app.workers.tasks import crawl_site_job, crawl_site_job_failed
 
 router = APIRouter(prefix="/sites", tags=["sites"])
 settings = get_settings()
@@ -83,6 +83,7 @@ def create_site(
         site.id,
         job.id,
         job_timeout=settings.crawl_job_timeout_seconds,
+        on_failure=crawl_site_job_failed,
     )
 
     return site
@@ -245,6 +246,7 @@ def trigger_recheck(site_id: str, db: Session = Depends(get_db), user: CurrentUs
         site.id,
         job.id,
         job_timeout=settings.crawl_job_timeout_seconds,
+        on_failure=crawl_site_job_failed,
     )
     return job
 

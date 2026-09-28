@@ -2,12 +2,15 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from types import TracebackType
 
 from app.core.config import get_settings
 from app.core.db import SessionLocal
 from app.models.jobs import CrawlJob
 from app.models.site import Site
 from app.services.pipeline import run_crawl_job
+from redis import Redis
+from rq.job import Job
 
 settings = get_settings()
 
@@ -52,6 +55,31 @@ def crawl_site_job(site_id: str, job_id: str) -> None:
         db.close()
 
 
+def crawl_site_job_failed(
+    rq_job: Job,
+    connection: Redis,
+    exc_type: type[BaseException],
+    exc_value: BaseException,
+    traceback: TracebackType | None,
+) -> None:
+    site_id, crawl_job_id = rq_job.args
+    db = SessionLocal()
+    try:
+        site = db.get(Site, site_id)
+        job = db.get(CrawlJob, crawl_job_id)
+        if not site or not job:
+            return
+
+        job.status = "error"
+        job.error_message = f"Worker failed ({exc_type.__name__}): {exc_value}"[:2000]
+        job.finished_at = datetime.now(timezone.utc)
+        site.status = "error"
+        site.crawl_activity = None
+        db.commit()
+    finally:
+        db.close()
+
+
 def enqueue_rechecks() -> None:
     """Invoked on a schedule (Render Cron) to enqueue a recheck job for every ready site."""
     from app.workers.queue import get_queue
@@ -69,6 +97,7 @@ def enqueue_rechecks() -> None:
                 site.id,
                 job.id,
                 job_timeout=settings.crawl_job_timeout_seconds,
+                on_failure=crawl_site_job_failed,
             )
     finally:
         db.close()
