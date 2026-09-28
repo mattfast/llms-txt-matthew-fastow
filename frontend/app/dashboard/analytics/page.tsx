@@ -343,36 +343,38 @@ export default function TopicsPage() {
             Site-specific extracted terms, including terms that may not rank in the company-wide
             leaderboard.
           </p>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {siteTopics.map((site) => (
-              <div key={site.site_id} className="rounded-lg bg-surface p-3">
-                <div className="flex items-start justify-between gap-2">
-                  <h3 className="text-sm font-medium truncate">{site.domain}</h3>
-                  {site.last_crawled_at && (
-                    <span className="shrink-0 text-xs text-foreground-muted">
-                      {new Date(site.last_crawled_at).toLocaleDateString()}
-                    </span>
+          <div className="max-h-72 overflow-y-auto pr-1">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {siteTopics.map((site) => (
+                <div key={site.site_id} className="rounded-lg bg-surface p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <h3 className="text-sm font-medium truncate">{site.domain}</h3>
+                    {site.last_crawled_at && (
+                      <span className="shrink-0 text-xs text-foreground-muted">
+                        {new Date(site.last_crawled_at).toLocaleDateString()}
+                      </span>
+                    )}
+                  </div>
+                  {site.topics.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5 mt-3">
+                      {site.topics.map(({ topic, mentions }) => (
+                        <span
+                          key={topic}
+                          className="pill border border-border-subtle px-2 py-1 text-xs"
+                          title={`${mentions} mentions`}
+                        >
+                          {topic}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-foreground-muted mt-3">
+                      No salient terms found in crawled page titles or descriptions.
+                    </p>
                   )}
                 </div>
-                {site.topics.length > 0 ? (
-                  <div className="flex flex-wrap gap-1.5 mt-3">
-                    {site.topics.map(({ topic, mentions }) => (
-                      <span
-                        key={topic}
-                        className="pill border border-border-subtle px-2 py-1 text-xs"
-                        title={`${mentions} mentions`}
-                      >
-                        {topic}
-                      </span>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-xs text-foreground-muted mt-3">
-                    No salient terms found in crawled page titles or descriptions.
-                  </p>
-                )}
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         </section>
       )}
