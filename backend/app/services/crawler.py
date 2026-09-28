@@ -371,6 +371,11 @@ class Crawler:
                         if not page_url or not self._same_domain(page_url):
                             self._record_coverage(requested_url, "skipped", "Redirected outside the selected site")
                             continue
+                        # A redirect can resolve to a URL we haven't marked visited/queued yet (only
+                        # requested_url was). Mark it now so a self-link discovered below doesn't
+                        # re-queue it and overwrite its "crawled" coverage status back to "discovered".
+                        self._visited.add(page_url)
+                        queued.add(page_url)
 
                         completed_urls.append(page_url)
                         html = resp.text
@@ -417,9 +422,13 @@ class Crawler:
 
                         if self.include_patterns and not self._matches_include(page_url):
                             self._record_coverage(page_url, "skipped", "Used only to discover included pages")
+                            if requested_url != page_url:
+                                self._record_coverage(requested_url, "skipped", "Used only to discover included pages")
                         else:
                             pages_by_path[page.path] = page
                             self._record_coverage(page_url, "crawled")
+                            if requested_url != page_url:
+                                self._record_coverage(requested_url, "crawled")
                         discovered_links.extend(page_links)
 
                     if self.root_url in batch:

@@ -257,6 +257,59 @@ class CrawlTraversalTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(crawler.coverage["summary"]["crawled"], 1)
         self.assertEqual(crawler.coverage["summary"]["skipped"], 2)
 
+    async def test_redirected_self_link_stays_marked_crawled(self):
+        """A page that redirects (e.g. https://example.com/ -> https://www.example.com/) and
+        then links back to itself must not have its coverage status reset from "crawled" back
+        to "discovered" once that self-link is re-encountered."""
+        html = (
+            "<html><title>Home</title><main><p>"
+            + ("Useful site content. " * 20)
+            + '</p><a href="/">Home</a></main></html>'
+        )
+
+        class FakeRedirectResponse:
+            status_code = 200
+            headers = {"content-type": "text/html; charset=utf-8"}
+
+            def __init__(self, url: str, text: str):
+                self.url = url
+                self.text = text
+
+        class FakeRedirectClient:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_):
+                return None
+
+            async def get(self, url: str, **_):
+                # Every request to the bare hostname is redirected to "www.".
+                return FakeRedirectResponse("https://www.example.com/", html)
+
+        client = FakeRedirectClient()
+        crawler = Crawler("https://example.com", max_pages=5)
+
+        async def allow_all_robots(_):
+            crawler._robots.parse([])
+
+        with (
+            patch.object(Crawler, "_load_robots", new_callable=AsyncMock, side_effect=allow_all_robots),
+            patch.object(Crawler, "_discover_from_sitemap", new_callable=AsyncMock, return_value=[]),
+            patch.object(crawler_module.httpx, "AsyncClient", return_value=client),
+            patch.object(crawler_module.settings, "crawl_js_render_limit", 0),
+            patch.object(crawler_module.settings, "crawl_concurrency", 2),
+        ):
+            result = await crawler.crawl()
+
+        self.assertEqual(len(result), 1)
+        # Both the pre-redirect URL and its resolved target are recorded as crawled; neither
+        # is left stuck showing "discovered"/pending, and the redirect target keeps its
+        # "crawled" status rather than being reset when its self-link is re-encountered.
+        self.assertEqual(crawler.coverage["summary"]["crawled"], 2)
+        self.assertEqual(crawler.coverage["summary"]["pending"], 0)
+        record = next(p for p in crawler.coverage["pages"] if p["url"] == "https://www.example.com/")
+        self.assertEqual(record["status"], "crawled")
+
 
 if __name__ == "__main__":
     unittest.main()
