@@ -18,7 +18,7 @@ from app.services.cost_tracker import make_usage_logger
 from app.services.crawler import Crawler
 from app.services.email_client import send_first_crawl_congrats_email
 from app.services.llm_client import embed_texts
-from app.services.merkle import MerkleTree
+from app.services.merkle import LeafDiff, MerkleTree
 from app.services.topic_insights import extract_topics
 
 
@@ -68,9 +68,9 @@ def run_crawl_job(
         db.commit()
         return
 
-    changed_paths = old_tree.changed_leaf_paths(new_tree) if old_tree else set(new_leaf_hashes)
+    diff = old_tree.diff_leaves(new_tree) if old_tree else LeafDiff(added=set(new_leaf_hashes))
 
-    _upsert_pages(db, site, pages, existing_pages, changed_paths, on_usage)
+    _upsert_pages(db, site, pages, existing_pages, diff.modified | diff.added, on_usage)
     _refresh_topics(db, site, pages)
 
     # Snapshot before mutating this site's own status, so "first ever" means the company had
@@ -93,8 +93,9 @@ def run_crawl_job(
             version_number=version_number,
             content=generated.content,
             full_content=generated.full_content,
-            changed_paths=sorted(changed_paths),
-            diff_summary=llms_generator.diff_summary(changed_paths, len(pages)),
+            changed_paths=sorted(diff.modified | diff.added),
+            removed_paths=sorted(diff.removed),
+            diff_summary=llms_generator.diff_summary(diff, len(pages)),
         )
     )
 
@@ -107,7 +108,7 @@ def run_crawl_job(
 
     job.status = "done"
     job.pages_crawled = len(pages)
-    job.pages_changed = len(changed_paths)
+    job.pages_changed = len(diff.modified) + len(diff.added)
     job.finished_at = datetime.now(timezone.utc)
 
     db.commit()

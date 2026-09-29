@@ -18,6 +18,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 
 from app.services.crawler import CrawledPage
+from app.services.merkle import LeafDiff
 from app.services.llm_client import summarize_site, summarize_page
 
 OPTIONAL_SECTION_HINTS = ("blog", "changelog", "news", "press", "legal", "careers")
@@ -79,9 +80,27 @@ def _titleize(segment: str) -> str:
     return segment.replace("-", " ").replace("_", " ").strip().title() or "Pages"
 
 
-def diff_summary(changed_paths: set[str], total_pages: int) -> str:
-    if not changed_paths:
+def diff_summary(diff: LeafDiff, total_pages: int) -> str:
+    """Summarizes a `LeafDiff` in terms of the *current* page set, so the reported numbers are
+    never ambiguous: "modified"/"added" describe pages that exist right now, "removed"
+    describes pages that no longer exist (so it's reported separately, not folded into a
+    single count that could exceed `total_pages`)."""
+    if not diff.all_paths:
         return "No content changes detected since the last check."
-    sample = ", ".join(sorted(changed_paths)[:5])
-    more = f" and {len(changed_paths) - 5} more" if len(changed_paths) > 5 else ""
-    return f"{len(changed_paths)} of {total_pages} pages changed: {sample}{more}."
+
+    parts = []
+    if diff.modified:
+        parts.append(f"{len(diff.modified)} modified")
+    if diff.added:
+        parts.append(f"{len(diff.added)} added")
+    if diff.removed:
+        parts.append(f"{len(diff.removed)} removed")
+
+    sample_paths = sorted(diff.modified | diff.added)[:5]
+    if not sample_paths:
+        sample_paths = sorted(diff.removed)[:5]
+    sample = ", ".join(sample_paths)
+    remaining = len(diff.all_paths) - len(sample_paths)
+    more = f" and {remaining} more" if remaining > 0 else ""
+
+    return f"{', '.join(parts)} ({total_pages} pages currently tracked): {sample}{more}."

@@ -96,7 +96,8 @@ class LlmsTxtVersion(Base):
     version_number: Mapped[int] = mapped_column(Integer)
     content: Mapped[str] = mapped_column(Text)  # llms.txt
     full_content: Mapped[str] = mapped_column(Text)  # llms-full.txt
-    changed_paths: Mapped[list] = mapped_column(JSON, default=list)
+    changed_paths: Mapped[list] = mapped_column(JSON, default=list)  # modified or newly-added paths
+    removed_paths: Mapped[list] = mapped_column(JSON, default=list)  # paths no longer discovered
     diff_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

@@ -78,6 +78,7 @@ export default function SiteDetailPage() {
   const [tab, setTab] = useState<"content" | "full">("content");
   const [expandFull, setExpandFull] = useState(false);
   const [expandChangedPaths, setExpandChangedPaths] = useState(false);
+  const [expandRemovedPaths, setExpandRemovedPaths] = useState(false);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const prevStatus = useRef<Site["status"] | null>(null);
   const followingLatestVersion = useRef(true);
@@ -86,6 +87,10 @@ export default function SiteDetailPage() {
     activeVersion && expandChangedPaths
       ? activeVersion.changed_paths
       : activeVersion?.changed_paths.slice(0, CHANGED_PATHS_PREVIEW_LIMIT) ?? [];
+  const visibleRemovedPaths =
+    activeVersion && expandRemovedPaths
+      ? activeVersion.removed_paths
+      : activeVersion?.removed_paths.slice(0, CHANGED_PATHS_PREVIEW_LIMIT) ?? [];
 
   const refresh = useCallback(async () => {
     try {
@@ -436,9 +441,17 @@ export default function SiteDetailPage() {
                 {activeVersion.diff_summary || "No change summary is available for this version."}
               </p>
             </div>
-            <span className="pill bg-accent/15 text-accent text-xs px-2.5 py-1 self-start">
-              {activeVersion.changed_paths.length} changed page
-              {activeVersion.changed_paths.length === 1 ? "" : "s"}
+            <span className="flex flex-wrap gap-2 self-start">
+              <span className="pill bg-accent/15 text-accent text-xs px-2.5 py-1">
+                {activeVersion.changed_paths.length} changed page
+                {activeVersion.changed_paths.length === 1 ? "" : "s"}
+              </span>
+              {activeVersion.removed_paths.length > 0 && (
+                <span className="pill bg-foreground-muted/15 text-foreground-muted text-xs px-2.5 py-1">
+                  {activeVersion.removed_paths.length} removed page
+                  {activeVersion.removed_paths.length === 1 ? "" : "s"}
+                </span>
+              )}
             </span>
           </div>
           {activeVersion.changed_paths.length > 0 && (
@@ -467,6 +480,33 @@ export default function SiteDetailPage() {
                   className="mt-2 text-xs text-accent hover:underline self-start cursor-pointer"
                 >
                   {expandChangedPaths ? "Show less" : "Show more changed pages"}
+                </button>
+              )}
+            </>
+          )}
+          {activeVersion.removed_paths.length > 0 && (
+            <>
+              <p className="mt-4 text-xs font-medium text-foreground-muted uppercase tracking-wide">
+                No longer discovered
+              </p>
+              <ul
+                className={`mt-1.5 flex flex-col gap-1.5 overflow-y-auto ${
+                  expandRemovedPaths ? "max-h-96" : "max-h-40"
+                }`}
+              >
+                {visibleRemovedPaths.map((path) => (
+                  <li key={path} className="text-sm font-mono text-foreground-muted break-all">
+                    {path}
+                  </li>
+                ))}
+              </ul>
+              {activeVersion.removed_paths.length > CHANGED_PATHS_PREVIEW_LIMIT && (
+                <button
+                  type="button"
+                  onClick={() => setExpandRemovedPaths((expanded) => !expanded)}
+                  className="mt-2 text-xs text-accent hover:underline self-start cursor-pointer"
+                >
+                  {expandRemovedPaths ? "Show less" : "Show more removed pages"}
                 </button>
               )}
             </>

@@ -102,25 +102,55 @@ class MerkleTree:
         return self.root.hash
 
     def changed_leaf_paths(self, other: "MerkleTree") -> set[str]:
-        """Returns the set of leaf paths that differ between this tree and `other`, only
-        recursing into subtrees whose hash actually changed."""
-        changed: set[str] = set()
-        self._diff_nodes(self.root, other.root, changed)
-        return changed
+        """Returns the set of leaf paths that differ between this tree and `other` (the union
+        of added/removed/modified - see `diff_leaves` for a breakdown). Only recurses into
+        subtrees whose hash actually changed."""
+        return self.diff_leaves(other).all_paths
 
-    def _diff_nodes(self, a: MerkleNode | None, b: MerkleNode | None, changed: set[str]) -> None:
+    def diff_leaves(self, other: "MerkleTree") -> "LeafDiff":
+        """Diffs this tree (the "old" state) against `other` (the "new" state), categorizing
+        every differing leaf path as modified (present in both, content differs), added
+        (present only in `other`), or removed (present only in this tree).
+
+        This distinction matters because "removed" paths no longer exist in the current page
+        set - lumping them into one flat "changed" count alongside modified/added paths makes
+        it look like more pages changed than the site currently has (e.g. "150 of 100 pages
+        changed" when 80 of those 150 are pages that simply weren't re-discovered this crawl).
+        """
+        result = LeafDiff()
+        self._diff_nodes(self.root, other.root, result)
+        return result
+
+    def _diff_nodes(self, a: MerkleNode | None, b: MerkleNode | None, result: "LeafDiff") -> None:
         a_hash = a.hash if a else None
         b_hash = b.hash if b else None
         if a_hash == b_hash:
             return  # subtree identical - stop recursing, this is the whole point of the tree
 
-        if a and a.is_leaf and not a.children:
-            changed.add(a.full_path)
-        if b and b.is_leaf and not b.children and (not a or a.full_path != b.full_path):
-            changed.add(b.full_path)
+        a_is_leaf = a is not None and a.is_leaf and not a.children
+        b_is_leaf = b is not None and b.is_leaf and not b.children
+        if a_is_leaf and b_is_leaf:
+            result.modified.add(a.full_path)
+        elif a_is_leaf and not b_is_leaf:
+            result.removed.add(a.full_path)
+        elif b_is_leaf and not a_is_leaf:
+            result.added.add(b.full_path)
 
         all_keys = set((a.children if a else {}).keys()) | set((b.children if b else {}).keys())
         for key in all_keys:
             child_a = a.children.get(key) if a else None
             child_b = b.children.get(key) if b else None
-            self._diff_nodes(child_a, child_b, changed)
+            self._diff_nodes(child_a, child_b, result)
+
+
+@dataclass
+class LeafDiff:
+    """Categorized result of diffing two Merkle trees' leaves."""
+
+    added: set[str] = field(default_factory=set)
+    removed: set[str] = field(default_factory=set)
+    modified: set[str] = field(default_factory=set)
+
+    @property
+    def all_paths(self) -> set[str]:
+        return self.added | self.removed | self.modified

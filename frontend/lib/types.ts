@@ -58,6 +58,7 @@ export interface LlmsTxtVersion {
   content: string;
   full_content: string;
   changed_paths: string[];
+  removed_paths: string[];
   diff_summary: string | null;
   created_at: string;
 }
@@ -66,6 +67,7 @@ export interface LlmsTxtVersionSummary {
   id: string;
   version_number: number;
   changed_paths: string[];
+  removed_paths: string[];
   diff_summary: string | null;
   created_at: string;
 }

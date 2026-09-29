@@ -65,6 +65,7 @@ class LlmsTxtVersionOut(BaseModel):
     content: str
     full_content: str
     changed_paths: list[str]
+    removed_paths: list[str]
     diff_summary: str | None
     created_at: datetime
 
@@ -75,6 +76,7 @@ class LlmsTxtVersionSummaryOut(BaseModel):
     id: str
     version_number: int
     changed_paths: list[str]
+    removed_paths: list[str]
     diff_summary: str | None
     created_at: datetime
 
