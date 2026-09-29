@@ -15,7 +15,7 @@ for [Profound](https://www.tryprofound.com/).
    dashboard.
 3. **Watch it crawl.** A background worker follows same-site links breadth-first, reads
    nested sitemap indexes and `robots.txt`, and uses a headless browser when JavaScript is
-   needed to reveal links. Crawls are capped at 500 pages by default (configurable with
+   needed to reveal links. Crawls are capped at 100 pages by default (configurable with
    `MAX_PAGES_PER_SITE`) and cannot include login-protected or undiscoverable URLs. It then
    summarizes the content and assembles a well-organized `llms.txt` with sections like
    `Docs`, `Pricing`, and `Blog` inferred from the site structure.
@@ -164,15 +164,7 @@ python -c "import app.models; from app.core.db import Base, engine; Base.metadat
 uvicorn app.main:app --reload --port 8000
 ```
 
-For an existing database, apply any additive SQL migrations in `backend/migrations/`
-before starting a backend version that depends on those columns. For example, crawl
-activity progress adds `sites.crawl_activity` via `001_crawl_activity.sql`; API key
-authentication adds the `api_keys` table via `002_api_keys.sql`; crawl settings,
-coverage, topic history, workspace roles, and audit events use `003_insights_controls_team.sql`.
-That migration promotes the earliest existing profile in each company to admin and leaves
-other existing profiles as members; the first profile in a newly-created workspace is
-also assigned admin. Team invitations use `004_team_invitations.sql`; invitation links expire
-after 24 hours and can be revoked by an admin. Downloadable CSV/JSON reports are available
+Downloadable CSV/JSON reports are available
 from the Sites and Topic Insights pages. New sites default to a 100-page crawl limit;
 existing sites keep whatever limit they were created or configured with.
 
