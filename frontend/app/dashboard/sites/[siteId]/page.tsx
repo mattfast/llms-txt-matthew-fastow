@@ -403,7 +403,7 @@ export default function SiteDetailPage() {
               </div>
             ))}
           </div>
-          <div className="max-h-72 overflow-y-auto divide-y divide-border-subtle">
+          <div className="max-h-48 overflow-y-auto divide-y divide-border-subtle">
             {filteredCoveragePages.slice(0, 200).map((page) => (
               <div key={page.url} className="py-2 flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 text-xs">
                 <span className="font-mono break-all flex-1">{page.url}</span>
@@ -419,14 +419,13 @@ export default function SiteDetailPage() {
               <p className="py-3 text-xs text-foreground-muted">No URLs match this type.</p>
             )}
           </div>
-          {filteredCoveragePages.length > 200 && (
+          {(filteredCoveragePages.length > 200 || (coverage.summary.truncated > 0 && coverageFilter === "all")) && (
             <p className="text-xs text-foreground-muted mt-3">
-              Showing 200 of {filteredCoveragePages.length} matching URLs.
-            </p>
-          )}
-          {coverage.summary.truncated > 0 && coverageFilter === "all" && (
-            <p className="text-xs text-foreground-muted mt-3">
-              {coverage.summary.truncated} additional URLs omitted from this report.
+              {filteredCoveragePages.length > 200 && `Showing 200 of ${filteredCoveragePages.length} matching URLs.`}
+              {filteredCoveragePages.length > 200 && coverage.summary.truncated > 0 && coverageFilter === "all" && " "}
+              {coverage.summary.truncated > 0 &&
+                coverageFilter === "all" &&
+                `(${coverage.summary.truncated} additional URLs omitted from this report.)`}
             </p>
           )}
         </section>
