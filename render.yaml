@@ -3,7 +3,7 @@
 #
 # Services:
 #   - llms-txt-api:     the FastAPI backend (web service)
-#   - llms-txt-worker:  RQ worker that processes crawl/recheck jobs from Redis
+#   - llms-txt-worker:  RQ worker (5 instances) that processes crawl/recheck jobs from Redis
 #   - llms-txt-cron:    daily job that enqueues rechecks for sites due for a refresh
 #   - llms-txt-redis:   managed Redis, used as the RQ job queue
 #
@@ -51,6 +51,7 @@ services:
     runtime: docker
     region: oregon
     plan: starter
+    numInstances: 5
     dockerfilePath: ./backend/Dockerfile
     dockerContext: ./backend
     envVars:
