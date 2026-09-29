@@ -151,12 +151,12 @@ export default function UserGuidePage() {
             </h1>
             <p className="mt-4 max-w-3xl text-base leading-7 text-foreground-muted">
               A walkthrough of the website crawler, generated llms.txt files, company insights,
-              team administration, and API integrations. The screenshots use fictional sample data.
+              team administration, and API integrations. Screenshots illustrate the app’s features.
             </p>
             <GuideImage
               src="/guide/homepage.png"
               alt="Profound llms.txt homepage with URL entry and rotating quote"
-              caption="Homepage — paste a site URL to begin. You can explore the flow before creating an account."
+              caption="Homepage — create an account to crawl a site and generate its llms.txt files."
               priority
             />
           </div>
@@ -250,15 +250,16 @@ export default function UserGuidePage() {
               then choose Recheck now to apply them.
             </Step>
             <Step title="Inspect coverage">
-              The coverage summary separates discovered, crawled, skipped, and failed URLs. Scroll
-              through recorded URL outcomes to understand why a page was skipped or failed; the
-              report can record up to 5,000 discovered URLs.
+              The coverage summary separates discovered, crawled, skipped, and failed URLs. Use
+              Filter by type to narrow the recorded URL outcomes and understand why a page was
+              skipped or failed; the report can record up to 5,000 discovered URLs.
             </Step>
             <Step title="Read and download output">
               Use the llms.txt and llms-full.txt views to inspect the latest generation. Download
               either file, switch between available versions, and select a changed path to inspect
-              its section. The Merkle tree visualization highlights changes detected in the most
-              recent crawl.
+              its section. Previous successful versions remain available in Version history even
+              when a later recheck fails. The Merkle tree visualization highlights changes detected
+              in the most recent crawl.
             </Step>
             <GuideImage
               src="/guide/site-detail.png"
@@ -283,20 +284,14 @@ export default function UserGuidePage() {
               its trend and the sites/pages where it appears. On mobile, details expand directly
               below the selected row.
             </Step>
-            <Step title="Recent terms by site">
-              This panel shows per-site terms—even terms outside the company-wide top 30—and is
-              internally scrollable when the list grows. It covers the six most recently crawled
-              ready sites. Topic data is refreshed when crawls finish; use Refresh to fetch the
-              latest data manually.
-            </Step>
             <Step title="Download reports">
               Use Download CSV or Download JSON to export company site status, crawl coverage,
               configuration, and topic insights.
             </Step>
             <GuideImage
               src="/guide/topic-insights.png"
-              alt="Topic insights screen with a company topic ranking and recent terms by site"
-              caption="Topic insights — aggregated terms, individual-site terms, and report downloads."
+              alt="Topic insights dashboard with company-wide topic rankings and selected topic details"
+              caption="Topic insights — compare topic rankings and inspect a term’s trend and source pages."
             />
           </GuideSection>
 

@@ -72,8 +72,8 @@ export default function HomePage() {
 
         <UrlBox />
 
-        <p className="text-xs text-foreground-muted">
-          No account needed to see how it works &mdash; you&rsquo;ll create one to save results.
+        <p className="text-xs text-foreground-muted text-center">
+          Create an account to crawl a site, generate llms.txt, and track changes.
         </p>
       </main>
 

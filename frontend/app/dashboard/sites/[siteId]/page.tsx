@@ -18,6 +18,7 @@ import { CrawlProgress } from "@/components/CrawlProgress";
 const PREVIEW_LIMIT = 8000;
 const CHANGED_PATHS_PREVIEW_LIMIT = 5;
 const DEFAULT_CRAWL_PAGE_LIMIT = 100;
+type CoverageStatus = CrawlCoverage["pages"][number]["status"];
 
 function normalizePath(path: string): string {
   const [pathname, query = ""] = path.split("?", 2);
@@ -67,6 +68,7 @@ export default function SiteDetailPage() {
   const [rechecking, setRechecking] = useState(false);
   const [downloading, setDownloading] = useState<"llms" | "full" | null>(null);
   const [coverage, setCoverage] = useState<CrawlCoverage | null>(null);
+  const [coverageFilter, setCoverageFilter] = useState<CoverageStatus | "all">("all");
   const [editingSettings, setEditingSettings] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
   const [maxPages, setMaxPages] = useState(DEFAULT_CRAWL_PAGE_LIMIT);
@@ -97,11 +99,8 @@ export default function SiteDetailPage() {
       setVersions(versionsData);
       setCoverage(jobsData.find((job) => job.coverage)?.coverage ?? null);
 
-      if (siteData.status === "ready") {
-        const [latest, tree] = await Promise.all([
-          apiFetch<LlmsTxtVersion>(`/sites/${siteId}/versions/latest`).catch(() => null),
-          apiFetch<MerkleTreeResponse>(`/sites/${siteId}/merkle-tree`).catch(() => null),
-        ]);
+      if (versionsData.length > 0) {
+        const latest = await apiFetch<LlmsTxtVersion>(`/sites/${siteId}/versions/latest`).catch(() => null);
         if (latest && followingLatestVersion.current) {
           if (activeVersionId.current !== latest.id) {
             activeVersionId.current = latest.id;
@@ -109,6 +108,10 @@ export default function SiteDetailPage() {
             setActiveVersion(latest);
           }
         }
+      }
+
+      if (siteData.status === "ready") {
+        const tree = await apiFetch<MerkleTreeResponse>(`/sites/${siteId}/merkle-tree`).catch(() => null);
         if (tree) setMerkle(tree);
       }
 
@@ -238,6 +241,8 @@ export default function SiteDetailPage() {
     ? selectedSection ??
       `No llms.txt section contains ${selectedPath} in version v${activeVersion?.version_number ?? ""}.`
     : activeVersion?.content ?? "";
+  const filteredCoveragePages =
+    coverage?.pages.filter((page) => coverageFilter === "all" || page.status === coverageFilter) ?? [];
 
   function selectPage(path: string) {
     setSelectedPath(path);
@@ -362,7 +367,24 @@ export default function SiteDetailPage() {
 
       {coverage && (
         <section className="card p-5">
-          <h2 className="font-medium mb-3">Crawl coverage</h2>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+            <h2 className="font-medium">Crawl coverage</h2>
+            <label className="flex items-center gap-2 text-xs text-foreground-muted">
+              Filter by type
+              <select
+                value={coverageFilter}
+                onChange={(event) => setCoverageFilter(event.target.value as CoverageStatus | "all")}
+                aria-label="Filter coverage by type"
+                className="card px-3 py-2 text-sm text-foreground outline-none focus:border-accent/60 transition-colors cursor-pointer"
+              >
+                <option value="all">All types</option>
+                <option value="discovered">Discovered</option>
+                <option value="failed">Failed</option>
+                <option value="skipped">Skipped</option>
+                <option value="crawled">Crawled</option>
+              </select>
+            </label>
+          </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
             {[
               ["Discovered", coverage.summary.discovered],
@@ -377,7 +399,7 @@ export default function SiteDetailPage() {
             ))}
           </div>
           <div className="max-h-72 overflow-y-auto divide-y divide-border-subtle">
-            {coverage.pages.slice(0, 200).map((page) => (
+            {filteredCoveragePages.slice(0, 200).map((page) => (
               <div key={page.url} className="py-2 flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 text-xs">
                 <span className="font-mono break-all flex-1">{page.url}</span>
                 <span className={`uppercase font-semibold ${
@@ -388,13 +410,16 @@ export default function SiteDetailPage() {
                 {page.reason && <span className="text-foreground-muted">{page.reason}</span>}
               </div>
             ))}
+            {filteredCoveragePages.length === 0 && (
+              <p className="py-3 text-xs text-foreground-muted">No URLs match this type.</p>
+            )}
           </div>
-          {coverage.pages.length > 200 && (
+          {filteredCoveragePages.length > 200 && (
             <p className="text-xs text-foreground-muted mt-3">
-              Showing 200 of {coverage.pages.length} recorded URLs.
+              Showing 200 of {filteredCoveragePages.length} matching URLs.
             </p>
           )}
-          {coverage.summary.truncated > 0 && (
+          {coverage.summary.truncated > 0 && coverageFilter === "all" && (
             <p className="text-xs text-foreground-muted mt-3">
               {coverage.summary.truncated} additional URLs omitted from this report.
             </p>

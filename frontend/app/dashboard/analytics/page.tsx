@@ -20,13 +20,6 @@ type TopicSources = {
   }[];
 };
 
-type SiteTopics = {
-  site_id: string;
-  domain: string;
-  last_crawled_at: string | null;
-  topics: { topic: string; mentions: number }[];
-};
-
 function TopicDetails({
   topic,
   trendData,
@@ -116,7 +109,6 @@ export default function TopicsPage() {
   const [topics, setTopics] = useState<TopicEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [trends, setTrends] = useState<TopicTrendPoint[]>([]);
-  const [siteTopics, setSiteTopics] = useState<SiteTopics[]>([]);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
   const [sites, setSites] = useState<Site[] | null>(null);
   const [siteStatusError, setSiteStatusError] = useState<string | null>(null);
@@ -129,19 +121,17 @@ export default function TopicsPage() {
   const refreshInsights = useCallback(async (showFeedback = false) => {
     setRefreshing(true);
     try {
-      const [topicData, trendData, siteTopicData] = await Promise.all([
+      const [topicData, trendData] = await Promise.all([
         apiFetch<TopicEntry[]>("/analytics/topics", { cache: "no-store" }),
         apiFetch<TopicTrendPoint[]>("/analytics/topics/trends?days=90", { cache: "no-store" }),
-        apiFetch<SiteTopics[]>("/analytics/site-topics", { cache: "no-store" }),
       ]);
       setTopics(topicData);
       setTrends(trendData);
-      setSiteTopics(siteTopicData);
       setLastRefreshed(new Date());
       setError(null);
       if (showFeedback) {
         toast.success(
-          `Insights refreshed: ${topicData.length} company-wide topics across ${siteTopicData.length} recently crawled sites`
+          `Insights refreshed: ${topicData.length} company-wide topics`
         );
       }
     } catch (err) {
@@ -334,49 +324,6 @@ export default function TopicsPage() {
         <p role="status" className="text-xs text-foreground-muted mb-4">
           Live crawl status is temporarily unavailable: {siteStatusError}
         </p>
-      )}
-
-      {siteTopics.length > 0 && (
-        <section className="card p-4 sm:p-5 mb-6">
-          <h2 className="text-base font-medium">Recent terms by site</h2>
-          <p className="text-xs text-foreground-muted mt-1 mb-4">
-            Site-specific extracted terms, including terms that may not rank in the company-wide
-            leaderboard.
-          </p>
-          <div className="max-h-72 overflow-y-auto pr-1">
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {siteTopics.map((site) => (
-                <div key={site.site_id} className="rounded-lg bg-surface p-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <h3 className="text-sm font-medium truncate">{site.domain}</h3>
-                    {site.last_crawled_at && (
-                      <span className="shrink-0 text-xs text-foreground-muted">
-                        {new Date(site.last_crawled_at).toLocaleDateString()}
-                      </span>
-                    )}
-                  </div>
-                  {site.topics.length > 0 ? (
-                    <div className="flex flex-wrap gap-1.5 mt-3">
-                      {site.topics.map(({ topic, mentions }) => (
-                        <span
-                          key={topic}
-                          className="pill border border-border-subtle px-2 py-1 text-xs"
-                          title={`${mentions} mentions`}
-                        >
-                          {topic}
-                        </span>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-xs text-foreground-muted mt-3">
-                      No salient terms found in crawled page titles or descriptions.
-                    </p>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
       )}
 
       <div
